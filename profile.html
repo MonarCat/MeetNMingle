@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - MeetNMingle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-100 font-sans">
+    <!-- Header -->
+    <header class="bg-pink-600 text-white py-4">
+        <div class="container mx-auto flex justify-between items-center px-4">
+            <h1 class="text-2xl font-bold">MeetNMingle</h1>
+            <nav>
+                <a href="index.html" class="px-4 hover:underline">Home</a>
+                <a href="matches.html" class="px-4 hover:underline">Matches</a>
+                <a href="messages.html" class="px-4 hover:underline">Messages</a>
+                <a href="#" id="logout" class="px-4 hover:underline">Logout</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Profile Section -->
+    <section class="py-16">
+        <div class="container mx-auto px-4">
+            <div class="bg-white p-8 rounded-lg shadow-lg max-w-2xl mx-auto">
+                <h2 class="text-2xl font-bold mb-6 text-center">My Profile</h2>
+                <div class="text-center">
+                    <img id="profilePhoto" src="https://via.placeholder.com/150" alt="Profile Photo" class="w-32 h-32 rounded-full mx-auto mb-4">
+                    <h3 id="profileName" class="text-xl font-semibold"></h3>
+                    <p id="profileAge" class="text-gray-600"></p>
+                    <p id="profileGender" class="text-gray-600"></p>
+                    <p id="profileLocation" class="text-gray-600"></p>
+                    <p id="profileInterests" class="text-gray-600"></p>
+                    <p id="profileBio" class="text-gray-600 mt-2"></p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="script.js"></script>
+</body>
+</html>
