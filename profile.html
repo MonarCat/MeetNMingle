@@ -1,44 +1,135 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Profile - MeetNMingle</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your profile — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .profile-head { text-align:center; margin-bottom: 22px; }
+  .avatar-lg { width: 100px; height:100px; border-radius:50%; background: var(--plum); background-size:cover; background-position:center; margin: 0 auto 12px; }
+  .rating-line { color: var(--amber); font-size: 0.95rem; margin-top: 4px; }
+  .tier-badge { display:inline-block; padding: 5px 14px; border-radius:999px; font-size:0.76rem; font-weight:800; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 8px; }
+  .tier-free { background: rgba(251,244,234,0.1); color: var(--cream-dim); }
+  .tier-silver { background: rgba(200,200,210,0.2); color: #DADAE0; }
+  .tier-gold { background: rgba(243,165,59,0.18); color: var(--amber); }
+  .tier-diamond { background: rgba(31,169,138,0.18); color: var(--jade); }
+
+  .row-item { display:flex; align-items:center; justify-content:space-between; padding: 16px 4px; border-bottom: 1px solid rgba(251,244,234,0.08); }
+  .row-item:last-child { border-bottom:none; }
+
+  .modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index: 60; display:none; align-items:center; justify-content:center; padding: 20px; }
+  .modal-backdrop.open { display:flex; }
+  .modal { max-width: 380px; width: 100%; padding: 24px; }
+  .star-picker { display:flex; gap:8px; justify-content:center; margin: 16px 0; font-size: 2rem; }
+  .star-picker span { cursor:pointer; opacity: 0.3; }
+  .star-picker span.active { opacity: 1; }
+</style>
 </head>
-<body class="bg-gray-100 font-sans">
-    <!-- Header -->
-    <header class="bg-pink-600 text-white py-4">
-        <div class="container mx-auto flex justify-between items-center px-4">
-            <h1 class="text-2xl font-bold">MeetNMingle</h1>
-            <nav>
-                <a href="index.html" class="px-4 hover:underline">Home</a>
-                <a href="matches.html" class="px-4 hover:underline">Matches</a>
-                <a href="messages.html" class="px-4 hover:underline">Messages</a>
-                <a href="#" id="logout" class="px-4 hover:underline">Logout</a>
-            </nav>
-        </div>
-    </header>
+<body>
+<div class="page-wrap">
+  <div class="profile-head">
+    <div class="avatar-lg" id="avatarLg"></div>
+    <h1 class="display" style="font-size:1.5rem; margin:0;" id="nameHeading">…</h1>
+    <div id="ratingLine" class="rating-line"></div>
+    <div><span class="tier-badge tier-free" id="tierBadge">Free</span></div>
+  </div>
 
-    <!-- Profile Section -->
-    <section class="py-16">
-        <div class="container mx-auto px-4">
-            <div class="bg-white p-8 rounded-lg shadow-lg max-w-2xl mx-auto">
-                <h2 class="text-2xl font-bold mb-6 text-center">My Profile</h2>
-                <div class="text-center">
-                    <img id="profilePhoto" src="https://via.placeholder.com/150" alt="Profile Photo" class="w-32 h-32 rounded-full mx-auto mb-4">
-                    <h3 id="profileName" class="text-xl font-semibold"></h3>
-                    <p id="profileAge" class="text-gray-600"></p>
-                    <p id="profileGender" class="text-gray-600"></p>
-                    <p id="profileLocation" class="text-gray-600"></p>
-                    <p id="profileInterests" class="text-gray-600"></p>
-                    <p id="profileBio" class="text-gray-600 mt-2"></p>
-                </div>
-            </div>
-        </div>
-    </section>
+  <div class="card" style="padding: 8px 18px; margin-bottom:16px;">
+    <div class="row-item"><span>Bio</span><span id="bioVal" style="color:var(--cream-dim); text-align:right; max-width:60%;">—</span></div>
+    <div class="row-item"><span>County</span><span id="countyVal" style="color:var(--cream-dim);">—</span></div>
+    <div class="row-item"><span>Ratings received</span><span id="ratingsCountVal" style="color:var(--cream-dim);">0</span></div>
+  </div>
 
-    <script src="script.js"></script>
+  <div class="card" style="padding: 8px 18px; margin-bottom:16px;">
+    <a href="pricing.html" style="display:block;">
+      <div class="row-item"><span>Subscription plan</span><span style="color:var(--coral); font-weight:700;">Manage →</span></div>
+    </a>
+    <a href="#" id="signOutBtn" style="display:block;">
+      <div class="row-item"><span style="color:var(--coral);">Sign out</span><span>→</span></div>
+    </a>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="rateModal">
+  <div class="card modal">
+    <h3 class="display" style="margin-top:0;" id="rateTargetName">Rate this person</h3>
+    <p style="color:var(--cream-dim); font-size:0.88rem;">How was your interaction and behaviour with them?</p>
+    <div class="star-picker" id="starPicker">
+      <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+    </div>
+    <div class="field"><textarea id="rateComment" rows="2" placeholder="Optional comment"></textarea></div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-outline btn-block" id="rateCancelBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="rateSubmitBtn" disabled>Submit rating</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile } from './js/supabaseClient.js';
+  import { renderTabbar } from './js/tabbar.js';
+  renderTabbar('profile');
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  let me;
+  (async () => {
+    const session = await requireAuth();
+    if (!session) return;
+    me = await requireProfile(session);
+    if (!me) return;
+
+    document.getElementById('nameHeading').textContent = me.display_name;
+    if (me.avatar_url) document.getElementById('avatarLg').style.backgroundImage = `url('${me.avatar_url}')`;
+    document.getElementById('bioVal').textContent = me.bio || 'Not set';
+    document.getElementById('countyVal').textContent = me.county;
+    document.getElementById('ratingsCountVal').textContent = me.ratings_count;
+    document.getElementById('ratingLine').textContent = me.ratings_count > 0 ? `★ ${me.average_rating} average (${me.ratings_count} ratings)` : 'No ratings yet';
+    const badge = document.getElementById('tierBadge');
+    badge.textContent = me.subscription_tier.charAt(0).toUpperCase() + me.subscription_tier.slice(1);
+    badge.className = 'tier-badge tier-' + me.subscription_tier;
+
+    document.getElementById('signOutBtn').onclick = async (e) => {
+      e.preventDefault();
+      await supabase.auth.signOut();
+      window.location.href = 'index.html';
+    };
+
+    // Rate flow via ?rate=<userId>
+    const params = new URLSearchParams(window.location.search);
+    const rateTargetId = params.get('rate');
+    if (rateTargetId) {
+      const { data: target } = await supabase.from('profiles').select('id,display_name').eq('id', rateTargetId).maybeSingle();
+      if (target) {
+        document.getElementById('rateTargetName').textContent = `Rate ${target.display_name}`;
+        document.getElementById('rateModal').classList.add('open');
+        let stars = 0;
+        const starEls = document.querySelectorAll('#starPicker span');
+        starEls.forEach(s => s.onclick = () => {
+          stars = parseInt(s.dataset.v);
+          starEls.forEach(x => x.classList.toggle('active', parseInt(x.dataset.v) <= stars));
+          document.getElementById('rateSubmitBtn').disabled = false;
+        });
+        document.getElementById('rateCancelBtn').onclick = () => document.getElementById('rateModal').classList.remove('open');
+        document.getElementById('rateSubmitBtn').onclick = async () => {
+          const { error } = await supabase.from('ratings').upsert({
+            rater_id: me.id, rated_id: target.id, stars,
+            comment: document.getElementById('rateComment').value.trim() || null,
+          }, { onConflict: 'rater_id,rated_id' });
+          document.getElementById('rateModal').classList.remove('open');
+          if (error) { toast('Could not submit rating: ' + error.message, 'error'); return; }
+          toast('Rating submitted!', 'success');
+        };
+      }
+    }
+  })();
+</script>
 </body>
 </html>

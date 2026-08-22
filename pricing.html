@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Premium — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .plan-card { padding: 24px 22px; margin-bottom: 14px; position: relative; }
+  .plan-card.current { border: 1.5px solid var(--jade); }
+  .plan-price { font-family: var(--font-display); font-size: 1.9rem; font-weight: 600; margin: 8px 0 4px; }
+  .plan-price span { font-size:0.85rem; color:var(--cream-dim); font-family: var(--font-body); }
+  .plan-card ul { list-style:none; padding:0; margin: 14px 0 18px; display:flex; flex-direction:column; gap:8px; }
+  .plan-card li { font-size:0.85rem; color:var(--cream-dim); display:flex; gap:8px; }
+  .plan-card li::before { content:'✓'; color:var(--jade); font-weight:700; }
+  .current-tag { position:absolute; top:-10px; right:20px; background:var(--jade); color:var(--ink); font-size:0.66rem; font-weight:800; padding:4px 10px; border-radius:999px; }
+
+  .modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index: 60; display:none; align-items:center; justify-content:center; padding: 20px; }
+  .modal-backdrop.open { display:flex; }
+  .modal { max-width: 380px; width:100%; padding: 24px; }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <h1 class="display" style="font-size:1.6rem;">Premium plans</h1>
+  <p style="color:var(--cream-dim); font-size:0.88rem; margin-top:-8px; margin-bottom:20px;">Pay monthly via M-Pesa. Cancel anytime.</p>
+  <div id="plansList"></div>
+</div>
+
+<div class="modal-backdrop" id="payModal">
+  <div class="card modal">
+    <h3 class="display" id="payPlanName" style="margin-top:0;">Subscribe</h3>
+    <div class="field">
+      <label>M-Pesa phone number</label>
+      <input type="tel" id="payPhone" placeholder="07XXXXXXXX">
+    </div>
+    <div id="payError" class="field-error" style="margin-bottom:10px;"></div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-outline btn-block" id="payCancelBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="payConfirmBtn">Send STK push</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile, SUPABASE_URL, SUPABASE_ANON_KEY } from './js/supabaseClient.js';
+  import { renderTabbar } from './js/tabbar.js';
+  renderTabbar('pricing');
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 4000);
+  }
+
+  let me, session, selectedTier = null;
+
+  (async () => {
+    session = await requireAuth();
+    if (!session) return;
+    me = await requireProfile(session);
+    if (!me) return;
+
+    const { data: plans } = await supabase.from('subscription_plans').select('*').order('price_kes');
+    const listEl = document.getElementById('plansList');
+    listEl.innerHTML = '';
+    plans.forEach(p => {
+      const isCurrent = me.subscription_tier === p.tier;
+      const card = document.createElement('div');
+      card.className = 'card plan-card' + (isCurrent ? ' current' : '');
+      card.innerHTML = `
+        ${isCurrent ? '<span class="current-tag">Your plan</span>' : ''}
+        <div style="font-weight:700; text-transform:capitalize;">${p.name}</div>
+        <div class="plan-price">KES ${p.price_kes}<span>/mo</span></div>
+        <ul>${p.features.map(f => `<li>${f}</li>`).join('')}</ul>
+        ${p.tier === 'free'
+          ? (isCurrent ? '' : '<button class="btn btn-outline btn-block" disabled>Downgrade not needed</button>')
+          : `<button class="btn ${isCurrent ? 'btn-outline' : 'btn-primary'} btn-block" data-tier="${p.tier}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? 'Active' : 'Subscribe with M-Pesa'}</button>`
+        }
+      `;
+      listEl.appendChild(card);
+    });
+
+    listEl.querySelectorAll('button[data-tier]').forEach(btn => {
+      btn.onclick = () => {
+        selectedTier = btn.dataset.tier;
+        document.getElementById('payPlanName').textContent = `Subscribe — ${selectedTier[0].toUpperCase() + selectedTier.slice(1)}`;
+        document.getElementById('payError').textContent = '';
+        document.getElementById('payModal').classList.add('open');
+      };
+    });
+  })();
+
+  document.getElementById('payCancelBtn').onclick = () => document.getElementById('payModal').classList.remove('open');
+  document.getElementById('payConfirmBtn').onclick = async () => {
+    const phone = document.getElementById('payPhone').value.trim();
+    const errEl = document.getElementById('payError');
+    if (!/^0?\d{9,10}$/.test(phone.replace(/\s/g, ''))) { errEl.textContent = 'Enter a valid Kenyan phone number.'; return; }
+    const btn = document.getElementById('payConfirmBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/mpesa-stkpush`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ phone, tier: selectedTier }),
+      });
+      const json = await res.json();
+      btn.disabled = false; btn.textContent = 'Send STK push';
+      if (!res.ok) { errEl.textContent = json.error || 'Something went wrong.'; return; }
+      document.getElementById('payModal').classList.remove('open');
+      toast(json.message || 'Payment request sent.', 'success');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Send STK push';
+      errEl.textContent = 'Network error — please try again.';
+    }
+  };
+</script>
+</body>
+</html>

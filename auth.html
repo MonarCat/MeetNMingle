@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .auth-wrap { max-width: 400px; margin: 0 auto; padding: 40px 20px 60px; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+  .auth-card { padding: 32px 28px; }
+  .tabs { display: flex; background: var(--ink); border-radius: 999px; padding: 4px; margin-bottom: 28px; }
+  .tabs button { flex: 1; padding: 10px; border: none; background: transparent; border-radius: 999px; color: var(--cream-dim); font-weight: 700; font-size: 0.88rem; }
+  .tabs button.active { background: var(--coral); color: var(--cream); }
+  .brand { text-align: center; margin-bottom: 24px; }
+  .hint { font-size: 0.78rem; color: var(--cream-dim); margin-top: -8px; margin-bottom: 16px; }
+  .switch-line { text-align: center; margin-top: 18px; font-size: 0.88rem; color: var(--cream-dim); }
+  .switch-line a { color: var(--coral); font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="brand">
+    <div class="logo" style="font-size:1.6rem;">meet<em>n</em>mingle</div>
+  </div>
+  <div class="card auth-card">
+    <div class="tabs">
+      <button id="tabLogin" class="active">Log in</button>
+      <button id="tabRegister">Sign up</button>
+    </div>
+
+    <form id="loginForm">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="loginEmail" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPassword" required autocomplete="current-password">
+      </div>
+      <div id="loginError" class="field-error"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Log in</button>
+    </form>
+
+    <form id="registerForm" style="display:none;">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="regEmail" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="regPassword" required minlength="6" autocomplete="new-password">
+      </div>
+      <p class="hint">At least 6 characters. You must be 18+ to join MeetNMingle.</p>
+      <div id="registerError" class="field-error"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="registerBtn">Create account</button>
+    </form>
+
+    <p class="switch-line" id="switchLine">
+      New here? <a href="#" id="goRegister">Create an account</a>
+    </p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase } from './js/supabaseClient.js';
+
+  const tabLogin = document.getElementById('tabLogin');
+  const tabRegister = document.getElementById('tabRegister');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const switchLine = document.getElementById('switchLine');
+
+  function showLogin() {
+    tabLogin.classList.add('active'); tabRegister.classList.remove('active');
+    loginForm.style.display = 'block'; registerForm.style.display = 'none';
+    switchLine.innerHTML = 'New here? <a href="#" id="goRegister">Create an account</a>';
+    document.getElementById('goRegister').onclick = (e) => { e.preventDefault(); showRegister(); };
+  }
+  function showRegister() {
+    tabRegister.classList.add('active'); tabLogin.classList.remove('active');
+    registerForm.style.display = 'block'; loginForm.style.display = 'none';
+    switchLine.innerHTML = 'Already have an account? <a href="#" id="goLogin">Log in</a>';
+    document.getElementById('goLogin').onclick = (e) => { e.preventDefault(); showLogin(); };
+  }
+  tabLogin.onclick = showLogin;
+  tabRegister.onclick = showRegister;
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('mode') === 'register') showRegister(); else showLogin();
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  async function afterAuth() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { data: profile } = await supabase.from('profiles').select('id').eq('id', session.user.id).maybeSingle();
+    window.location.href = profile ? 'discover.html' : 'onboarding.html';
+  }
+
+  // if already logged in, skip straight through
+  afterAuth();
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('loginBtn');
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Logging in…';
+    const { error } = await supabase.auth.signInWithPassword({
+      email: document.getElementById('loginEmail').value.trim(),
+      password: document.getElementById('loginPassword').value,
+    });
+    btn.disabled = false; btn.textContent = 'Log in';
+    if (error) { errEl.textContent = error.message; return; }
+    await afterAuth();
+  });
+
+  registerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('registerBtn');
+    const errEl = document.getElementById('registerError');
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    const { data, error } = await supabase.auth.signUp({
+      email: document.getElementById('regEmail').value.trim(),
+      password: document.getElementById('regPassword').value,
+    });
+    btn.disabled = false; btn.textContent = 'Create account';
+    if (error) { errEl.textContent = error.message; return; }
+    if (data.session) {
+      window.location.href = 'onboarding.html';
+    } else {
+      toast('Check your email to confirm your account.', 'success');
+    }
+  });
+</script>
+</body>
+</html>

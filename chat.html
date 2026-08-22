@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  body { padding-bottom: 0; }
+  .chat-header { display:flex; align-items:center; gap:12px; padding: 14px 18px; background: var(--ink-soft); border-bottom: 1px solid rgba(251,244,234,0.08); position: sticky; top:0; z-index: 20; }
+  .chat-header .avatar { width:40px; height:40px; border-radius:50%; background: var(--plum); background-size:cover; background-position:center; }
+  .chat-header .name { font-weight:700; }
+  .chat-header .back { font-size: 1.3rem; margin-right: 4px; }
+  .chat-wrap { max-width: 560px; margin: 0 auto; display:flex; flex-direction:column; height: calc(100vh - 130px); }
+  .messages { flex:1; overflow-y:auto; padding: 18px; display:flex; flex-direction:column; gap:10px; }
+  .msg-row { display:flex; }
+  .msg-row.mine { justify-content:flex-end; }
+  .bubble { max-width: 74%; padding: 10px 14px; border-radius: 18px; font-size: 0.92rem; }
+  .msg-row.mine .bubble { background: var(--coral); color: var(--cream); border-bottom-right-radius: 4px; }
+  .msg-row.theirs .bubble { background: var(--ink-soft); border-bottom-left-radius: 4px; }
+  .msg-time { font-size: 0.66rem; color: var(--cream-dim); margin-top: 4px; text-align: right; }
+  .media-bubble { padding: 0; overflow: hidden; border-radius: 16px; max-width: 220px; }
+  .media-bubble img { width: 100%; display:block; }
+  .view-once-btn { display:flex; flex-direction:column; align-items:center; gap:8px; padding: 24px; background: var(--ink); border-radius:16px; min-width:160px; }
+  .composer { display:flex; align-items:center; gap:10px; padding: 12px 16px; background: var(--ink-soft); border-top: 1px solid rgba(251,244,234,0.08); }
+  .composer input[type=text] { flex:1; background: var(--ink); border: 1.5px solid rgba(251,244,234,0.12); border-radius: 999px; padding: 12px 16px; color: var(--cream); font-size: 0.9rem; }
+  .icon-btn { width: 42px; height:42px; border-radius:50%; background: var(--ink); border: none; color: var(--cream-dim); font-size: 1.1rem; flex-shrink:0; }
+  .send-btn { background: var(--coral); color: var(--cream); }
+
+  .media-modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.8); z-index: 70; display:none; align-items:center; justify-content:center; padding: 20px; }
+  .media-modal-backdrop.open { display:flex; }
+  .media-modal-backdrop img { max-width: 100%; max-height: 80vh; border-radius: 12px; }
+
+  .share-sheet-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index:60; display:none; align-items:flex-end; justify-content:center; }
+  .share-sheet-backdrop.open { display:flex; }
+  .share-sheet { background: var(--ink-soft); width:100%; max-width: 480px; border-radius: 24px 24px 0 0; padding: 22px; }
+  .share-sheet h3 { margin-top:0; font-family: var(--font-display); }
+  .toggle-row { display:flex; align-items:center; justify-content:space-between; padding: 12px 0; border-bottom: 1px solid rgba(251,244,234,0.08); }
+  .toggle-row div div:first-child { font-weight:600; font-size:0.9rem; }
+  .toggle-row div div:last-child { font-size:0.76rem; color:var(--cream-dim); }
+  .switch { position:relative; width:44px; height:26px; background: rgba(251,244,234,0.15); border-radius:999px; border:none; }
+  .switch.on { background: var(--coral); }
+  .switch::after { content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition: transform 0.15s ease; }
+  .switch.on::after { transform: translateX(18px); }
+</style>
+</head>
+<body>
+
+<div class="chat-header">
+  <a href="matches.html" class="back">←</a>
+  <div class="avatar" id="peerAvatar"></div>
+  <div style="flex:1;">
+    <div class="name" id="peerName">Loading…</div>
+  </div>
+  <button class="icon-btn" id="rateBtn" title="Rate this person">⭐</button>
+</div>
+
+<div class="chat-wrap">
+  <div class="messages" id="messages"></div>
+  <div class="composer">
+    <button class="icon-btn" id="attachBtn">📎</button>
+    <input type="text" id="textInput" placeholder="Type a message…">
+    <button class="icon-btn send-btn" id="sendBtn">➤</button>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/*" style="display:none;">
+
+<div class="share-sheet-backdrop" id="shareSheet">
+  <div class="share-sheet">
+    <h3>Send photo</h3>
+    <div class="toggle-row">
+      <div><div>View once</div><div>Disappears after they open it once</div></div>
+      <button class="switch" id="viewOnceToggle"></button>
+    </div>
+    <div class="toggle-row" style="border-bottom:none;">
+      <div><div>Allow saving</div><div>Let them download/keep this photo</div></div>
+      <button class="switch on" id="allowSaveToggle"></button>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button class="btn btn-outline btn-block" id="shareCancelBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="shareSendBtn">Send</button>
+    </div>
+  </div>
+</div>
+
+<div class="media-modal-backdrop" id="mediaModal">
+  <img id="mediaModalImg" src="">
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile } from './js/supabaseClient.js';
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const matchId = params.get('match');
+  let me, peer, conversationId, pendingFile = null;
+
+  const messagesEl = document.getElementById('messages');
+
+  function bubbleTime(ts) {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function renderMessage(msg) {
+    const mine = msg.sender_id === me.id;
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + (mine ? 'mine' : 'theirs');
+    row.dataset.id = msg.id;
+
+    if (msg.media_path || (msg.is_view_once && !msg.media_path)) {
+      const consumed = msg.is_view_once && msg.viewed_at;
+      if (msg.is_view_once && !consumed && !mine) {
+        const wrap = document.createElement('div');
+        wrap.className = 'bubble view-once-btn';
+        wrap.innerHTML = `<div style="font-size:1.6rem;">📷</div><div style="font-size:0.82rem;">Tap to view once</div>`;
+        wrap.onclick = () => openViewOnce(msg.id);
+        row.appendChild(wrap);
+      } else if (msg.is_view_once && consumed) {
+        const wrap = document.createElement('div');
+        wrap.className = 'bubble';
+        wrap.style.opacity = '0.6';
+        wrap.textContent = mine ? '📷 Photo (viewed)' : '📷 Photo — already viewed';
+        row.appendChild(wrap);
+      } else if (msg.is_view_once && mine && !consumed) {
+        const wrap = document.createElement('div');
+        wrap.className = 'bubble';
+        wrap.textContent = '📷 Sent — view once (not opened yet)';
+        row.appendChild(wrap);
+      } else if (msg.media_path) {
+        const wrap = document.createElement('div');
+        wrap.className = 'bubble media-bubble';
+        const img = document.createElement('img');
+        if (!msg.allow_save) { img.oncontextmenu = () => false; img.draggable = false; }
+        const { data } = await supabase.storage.from('chat-media').createSignedUrl(msg.media_path, 3600);
+        if (data) img.src = data.signedUrl;
+        wrap.appendChild(img);
+        row.appendChild(wrap);
+      }
+    } else {
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = msg.content;
+      row.appendChild(bubble);
+    }
+
+    const container = document.createElement('div');
+    container.appendChild(row);
+    const time = document.createElement('div');
+    time.className = 'msg-time';
+    time.style.textAlign = mine ? 'right' : 'left';
+    time.textContent = bubbleTime(msg.created_at);
+    container.appendChild(time);
+    messagesEl.appendChild(container);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  async function openViewOnce(messageId) {
+    const { data: msgRow } = await supabase.from('messages').select('media_path').eq('id', messageId).maybeSingle();
+    if (!msgRow || !msgRow.media_path) { toast('This photo is no longer available.', 'error'); return; }
+    const { data: signed } = await supabase.storage.from('chat-media').createSignedUrl(msgRow.media_path, 60);
+    if (!signed) { toast('Could not open photo.', 'error'); return; }
+    const modal = document.getElementById('mediaModal');
+    const img = document.getElementById('mediaModalImg');
+    img.onload = async () => {
+      await supabase.rpc('consume_view_once_message', { p_message_id: messageId });
+    };
+    img.src = signed.signedUrl;
+    modal.classList.add('open');
+  }
+  document.getElementById('mediaModal').onclick = async () => {
+    document.getElementById('mediaModal').classList.remove('open');
+    await reloadThread();
+  };
+
+  async function loadThread() {
+    const { data: msgs, error } = await supabase.from('messages')
+      .select('*').eq('conversation_id', conversationId).order('created_at', { ascending: true });
+    if (error) { console.error(error); return; }
+    messagesEl.innerHTML = '';
+    for (const m of msgs) await renderMessage(m);
+  }
+  async function reloadThread() { await loadThread(); }
+
+  document.getElementById('sendBtn').onclick = async () => {
+    const input = document.getElementById('textInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    const { error } = await supabase.from('messages').insert({ conversation_id: conversationId, sender_id: me.id, content: text });
+    if (error) toast('Message failed to send', 'error');
+  };
+  document.getElementById('textInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('sendBtn').click();
+  });
+
+  document.getElementById('attachBtn').onclick = () => {
+    if (me.subscription_tier === 'free') {
+      toast('Upgrade to Silver to share photos in chat.', 'error');
+      setTimeout(() => window.location.href = 'pricing.html', 1400);
+      return;
+    }
+    document.getElementById('fileInput').click();
+  };
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    pendingFile = e.target.files[0];
+    if (!pendingFile) return;
+    document.getElementById('shareSheet').classList.add('open');
+  });
+  document.getElementById('viewOnceToggle').onclick = (e) => e.target.classList.toggle('on');
+  document.getElementById('allowSaveToggle').onclick = (e) => e.target.classList.toggle('on');
+  document.getElementById('shareCancelBtn').onclick = () => {
+    document.getElementById('shareSheet').classList.remove('open');
+    pendingFile = null;
+    document.getElementById('fileInput').value = '';
+  };
+  document.getElementById('shareSendBtn').onclick = async () => {
+    if (!pendingFile) return;
+    const isViewOnce = document.getElementById('viewOnceToggle').classList.contains('on');
+    const allowSave = document.getElementById('allowSaveToggle').classList.contains('on');
+    const path = `${me.id}/${conversationId}-${Date.now()}-${pendingFile.name}`;
+    const { error: upErr } = await supabase.storage.from('chat-media').upload(path, pendingFile);
+    document.getElementById('shareSheet').classList.remove('open');
+    document.getElementById('fileInput').value = '';
+    if (upErr) { toast('Upload failed: ' + upErr.message, 'error'); pendingFile = null; return; }
+    const { error } = await supabase.from('messages').insert({
+      conversation_id: conversationId, sender_id: me.id,
+      media_path: path, media_type: 'image',
+      is_view_once: isViewOnce, allow_save: isViewOnce ? false : allowSave,
+    });
+    pendingFile = null;
+    if (error) toast('Could not send photo', 'error');
+  };
+
+  document.getElementById('rateBtn').onclick = () => {
+    window.location.href = `profile.html?rate=${peer.id}`;
+  };
+
+  (async () => {
+    const session = await requireAuth();
+    if (!session) return;
+    me = await requireProfile(session);
+    if (!me) return;
+    if (!matchId) { window.location.href = 'matches.html'; return; }
+
+    const { data: match, error: matchErr } = await supabase.from('matches').select('*').eq('id', matchId).maybeSingle();
+    if (matchErr || !match) { window.location.href = 'matches.html'; return; }
+    const peerId = match.user1_id === me.id ? match.user2_id : match.user1_id;
+    const { data: peerProfile } = await supabase.from('profiles').select('*').eq('id', peerId).maybeSingle();
+    peer = peerProfile;
+    document.getElementById('peerName').textContent = peer?.display_name || 'MeetNMingle user';
+    if (peer?.avatar_url) document.getElementById('peerAvatar').style.backgroundImage = `url('${peer.avatar_url}')`;
+
+    let { data: conv } = await supabase.from('conversations').select('id').eq('match_id', matchId).maybeSingle();
+    conversationId = conv?.id;
+    if (!conversationId) { toast('Conversation not ready yet, please retry.', 'error'); return; }
+
+    await loadThread();
+
+    supabase
+      .channel(`conv-${conversationId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        async () => { await loadThread(); })
+      .subscribe();
+  })();
+</script>
+</body>
+</html>

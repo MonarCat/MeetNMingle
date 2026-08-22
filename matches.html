@@ -1,53 +1,80 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matches - MeetNMingle</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matches — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .match-row { display:flex; align-items:center; gap:14px; padding: 14px; border-radius: var(--radius-md); margin-bottom:8px; }
+  .match-row:hover { background: var(--ink-soft); }
+  .avatar { width: 54px; height:54px; border-radius:50%; background: var(--plum); background-size:cover; background-position:center; flex-shrink:0; }
+  .match-info { flex:1; min-width:0; }
+  .match-info .name { font-weight: 700; }
+  .match-info .preview { font-size: 0.82rem; color: var(--cream-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .match-time { font-size: 0.72rem; color: var(--cream-dim); }
+</style>
 </head>
-<body class="bg-gray-100 font-sans">
-    <!-- Header -->
-    <header class="bg-pink-600 text-white py-4">
-        <div class="container mx-auto flex justify-between items-center px-4">
-            <h1 class="text-2xl font-bold">MeetNMingle</h1>
-            <nav>
-                <a href="index.html" class="px-4 hover:underline">Home</a>
-                <a href="profile.html" class="px-4 hover:underline">Profile</a>
-                <a href="messages.html" class="px-4 hover:underline">Messages</a>
-                <a href="#" id="logout" class="px-4 hover:underline">Logout</a>
-            </nav>
-        </div>
-    </header>
+<body>
+<div class="page-wrap">
+  <h1 class="display" style="font-size:1.6rem; margin-bottom:20px;">Your matches</h1>
+  <div id="matchList">
+    <div class="empty-state"><div class="spinner" style="margin:0 auto;"></div></div>
+  </div>
+</div>
 
-    <!-- Matches Section -->
-    <section class="py-16">
-        <div class="container mx-auto px-4">
-            <h2 class="text-3xl font-bold text-center mb-8">Find Your Match</h2>
-            <!-- Search and Filters -->
-            <div class="bg-white p-6 rounded-lg shadow-lg mb-8">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <input type="text" id="searchName" class="p-3 border rounded-lg" placeholder="Search by name...">
-                    <label for="filterGender" class="sr-only">Filter by Gender</label>
-                    <select id="filterGender" class="p-3 border rounded-lg" aria-label="Filter by Gender">
-                        <option value="">All Genders</option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Other">Other</option>
-                    </select>
-                    <input type="number" id="filterAgeMin" class="p-3 border rounded-lg" placeholder="Min Age">
-                    <input type="number" id="filterAgeMax" class="p-3 border rounded-lg" placeholder="Max Age">
-                </div>
-                <button id="applyFilters" class="mt-4 bg-pink-600 text-white p-3 rounded-lg font-semibold hover:bg-pink-700">Apply Filters</button>
-            </div>
-            <!-- Matches List -->
-            <div id="matchesList" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
-        </div>
-    </section>
+<script type="module">
+  import { supabase, requireAuth, requireProfile, timeAgo } from './js/supabaseClient.js';
+  import { renderTabbar } from './js/tabbar.js';
+  renderTabbar('matches');
 
-    <script src="mockUsers.js"></script>
-    <script src="script.js"></script>
+  (async () => {
+    const session = await requireAuth();
+    if (!session) return;
+    const me = await requireProfile(session);
+    if (!me) return;
+
+    const { data: matches, error } = await supabase.from('matches')
+      .select('id, user1_id, user2_id, matched_at, conversations(id, last_message_at)')
+      .or(`user1_id.eq.${me.id},user2_id.eq.${me.id}`)
+      .order('matched_at', { ascending: false });
+
+    const listEl = document.getElementById('matchList');
+    if (error) { console.error(error); listEl.innerHTML = '<div class="empty-state">Could not load matches.</div>'; return; }
+    if (!matches || matches.length === 0) {
+      listEl.innerHTML = `<div class="empty-state">
+        <div style="font-size:2.5rem;">💌</div>
+        <p>No matches yet. Head to Discover and start swiping!</p>
+        <a href="discover.html" class="btn btn-primary" style="margin-top:12px;">Go to Discover</a>
+      </div>`;
+      return;
+    }
+
+    const otherIds = matches.map(m => m.user1_id === me.id ? m.user2_id : m.user1_id);
+    const { data: profiles } = await supabase.from('profiles').select('id,display_name,avatar_url').in('id', otherIds);
+    const profileMap = Object.fromEntries((profiles||[]).map(p => [p.id, p]));
+
+    listEl.innerHTML = '';
+    matches.forEach(m => {
+      const otherId = m.user1_id === me.id ? m.user2_id : m.user1_id;
+      const p = profileMap[otherId];
+      if (!p) return;
+      const conv = Array.isArray(m.conversations) ? m.conversations[0] : m.conversations;
+      const row = document.createElement('a');
+      row.href = `chat.html?match=${m.id}`;
+      row.className = 'match-row';
+      row.style.display = 'flex';
+      row.innerHTML = `
+        <div class="avatar" style="${p.avatar_url ? `background-image:url('${p.avatar_url}')` : ''}"></div>
+        <div class="match-info">
+          <div class="name">${p.display_name}</div>
+          <div class="preview">${conv?.last_message_at ? 'Tap to continue chatting' : 'Say hi 👋'}</div>
+        </div>
+        <div class="match-time">${timeAgo(conv?.last_message_at || m.matched_at)}</div>
+      `;
+      listEl.appendChild(row);
+    });
+  })();
+</script>
 </body>
 </html>

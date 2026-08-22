@@ -1,89 +1,186 @@
-<!--Landing page for MeetNMingle-->
-<!--This page serves as the landing page for the dating app, showcasing its features and encouraging users to sign up.--> 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MeetNMingle - Find Your Perfect Match</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MeetNMingle — Patana na Watu Wanaokufaa</title>
+<meta name="description" content="MeetNMingle: Kenya's free dating platform. Find love anywhere in Kenya — safe, rated, and built for real matching.">
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .hero { position: relative; padding: 64px 6vw 40px; overflow: hidden; }
+  .hero-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 40px; align-items: center; }
+  .hero h1 { font-size: clamp(2.4rem, 5vw, 3.8rem); margin: 18px 0 20px; }
+  .hero p.lede { font-size: 1.1rem; color: var(--cream-dim); max-width: 46ch; margin-bottom: 28px; }
+  .hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; }
+  .trust-row { display: flex; gap: 24px; margin-top: 32px; flex-wrap: wrap; }
+  .trust-row div { font-size: 0.8rem; color: var(--cream-dim); }
+  .trust-row strong { display: block; font-family: var(--font-display); font-size: 1.6rem; color: var(--cream); font-weight: 600; }
 
-    <!-- Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'GA_MEASUREMENT_ID');
-    </script>
+  .route-svg { width: 100%; height: auto; }
+  .route-label { font-family: var(--font-body); font-size: 11px; font-weight: 700; fill: var(--cream-dim); letter-spacing: 0.05em; }
+  .route-city { fill: var(--amber); }
+  .route-line { stroke: var(--coral); stroke-width: 2.5; stroke-dasharray: 6 7; fill: none; opacity: 0.7; }
+  .pulse-dot { fill: var(--coral); }
+  .pulse-ring { fill: none; stroke: var(--coral); stroke-width: 2; opacity: 0; animation: pulseRing 2.4s ease-out infinite; }
+  @keyframes pulseRing { 0% { r: 8; opacity: 0.9; } 100% { r: 34; opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .pulse-ring { animation: none; } }
 
-    <!-- Hotjar Tracking Code -->
-    <script>
-        (function(h,o,t,j,a,r){
-            h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};
-            h._hjSettings={hjid:YOUR_HOTJAR_ID,hjsv:6};
-            a=o.getElementsByTagName('head')[0];
-            r=o.createElement('script');r.async=1;
-            r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;
-            a.appendChild(r);
-        })(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');
-    </script>
+  section { padding: 70px 6vw; }
+  .section-head { max-width: 640px; margin: 0 auto 44px; text-align: center; }
+  .section-head h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); margin: 12px 0 14px; }
+  .section-head p { color: var(--cream-dim); }
+
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; max-width: 1000px; margin: 0 auto; }
+  .feature-card { padding: 28px; }
+  .feature-card .icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+  .feature-card h3 { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; margin: 0 0 8px; }
+  .feature-card p { color: var(--cream-dim); font-size: 0.9rem; margin: 0; }
+
+  .safety-section { background: var(--ink-soft); border-radius: var(--radius-lg); margin: 0 6vw; padding: 56px 6vw; }
+  .safety-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; max-width: 1000px; margin: 0 auto; }
+  .safety-item { display: flex; gap: 14px; }
+  .safety-item .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--jade); margin-top: 8px; flex-shrink: 0; }
+  .safety-item h4 { margin: 0 0 4px; font-size: 1rem; }
+  .safety-item p { margin: 0; color: var(--cream-dim); font-size: 0.88rem; }
+
+  .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 20px; max-width: 1100px; margin: 0 auto; }
+  .plan-card { padding: 30px 26px; position: relative; }
+  .plan-card.featured { border: 1.5px solid var(--coral); }
+  .plan-badge { position: absolute; top: -12px; right: 24px; background: var(--coral); color: var(--cream); font-size: 0.68rem; font-weight: 800; padding: 5px 12px; border-radius: 999px; letter-spacing: 0.04em; }
+  .plan-price { font-family: var(--font-display); font-size: 2.2rem; font-weight: 600; margin: 14px 0 4px; }
+  .plan-price span { font-size: 0.9rem; color: var(--cream-dim); font-family: var(--font-body); font-weight: 500; }
+  .plan-card ul { list-style: none; padding: 0; margin: 18px 0 24px; display: flex; flex-direction: column; gap: 10px; }
+  .plan-card li { font-size: 0.85rem; color: var(--cream-dim); display: flex; gap: 8px; }
+  .plan-card li::before { content: '✓'; color: var(--jade); font-weight: 700; }
+
+  footer { padding: 40px 6vw 100px; text-align: center; color: var(--cream-dim); font-size: 0.82rem; border-top: 1px solid rgba(251,244,234,0.08); }
+  @media (max-width: 860px) { .hero-grid { grid-template-columns: 1fr; } }
+</style>
 </head>
-<body class="bg-gray-100 font-sans">
-    <!-- Header -->
-    <header class="bg-pink-600 text-white py-4">
-        <div class="container mx-auto flex justify-between items-center px-4">
-            <h1 class="text-2xl font-bold">MeetNMingle</h1>
-            <nav>
-                <a href="login.html" class="px-4 hover:underline">Login</a>
-                <a href="register.html" class="px-4 hover:underline">Sign Up</a>
-            </nav>
-        </div>
-    </header>
+<body>
 
-    <!-- Hero Section -->
-    <section class="bg-gradient-to-r from-pink-500 to-purple-600 text-white py-20 text-center">
-        <div class="container mx-auto px-4">
-            <h2 class="text-4xl md:text-5xl font-bold mb-4 animate-fade-in">Find Your Perfect Match</h2>
-            <p class="text-lg md:text-xl mb-8">Join MeetNMingle and connect with singles who share your vibe!</p>
-            <a href="register.html" class="bg-white text-pink-600 px-6 py-3 rounded-full font-semibold hover:bg-gray-200">Get Started</a>
-        </div>
-    </section>
+<nav class="nav">
+  <div class="logo">meet<em>n</em>mingle</div>
+  <div style="display:flex; gap:10px;">
+    <a href="auth.html?mode=login" class="btn btn-outline btn-sm">Log in</a>
+    <a href="auth.html?mode=register" class="btn btn-primary btn-sm">Join free</a>
+  </div>
+</nav>
 
-    <!-- Features Section -->
-    <section class="py-16 bg-white">
-        <div class="container mx-auto px-4 text-center">
-            <h3 class="text-3xl font-bold mb-8">Why MeetNMingle?</h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div class="p-6 hover:shadow-lg transition-shadow">
-                    <h4 class="text-xl font-semibold mb-2">Smart Matching</h4>
-                    <p>Find singles who share your interests and values.</p>
-                </div>
-                <div class="p-6 hover:shadow-lg transition-shadow">
-                    <h4 class="text-xl font-semibold mb-2">Safe Chats</h4>
-                    <p>Connect securely with our private messaging system.</p>
-                </div>
-                <div class="p-6 hover:shadow-lg transition-shadow">
-                    <h4 class="text-xl font-semibold mb-2">Easy Search</h4>
-                    <p>Filter and find the perfect match with ease.</p>
-                </div>
-               
-            </div>
-        </div>
-    </section>
+<header class="hero">
+  <div class="hero-grid">
+    <div>
+      <span class="eyebrow">Karibu · Made for Kenya</span>
+      <h1 class="display">Find love <em>anywhere</em> in Kenya.</h1>
+      <p class="lede">Nairobi to Kisumu, Mombasa to Eldoret — MeetNMingle matches you by real interests, not just a swipe. Rated profiles, verified safety tools, and it's free to start.</p>
+      <div class="hero-ctas">
+        <a href="auth.html?mode=register" class="btn btn-primary">Create your profile</a>
+        <a href="#safety" class="btn btn-outline">See safety features</a>
+      </div>
+      <div class="trust-row">
+        <div><strong>47</strong>counties reachable</div>
+        <div><strong>★ 5.0</strong>behaviour ratings on every profile</div>
+        <div><strong>KES 0</strong>to join & start matching</div>
+      </div>
+    </div>
+    <div>
+      <svg class="route-svg" viewBox="0 0 420 460" xmlns="http://www.w3.org/2000/svg">
+        <path class="route-line" d="M 90 60 Q 40 160 120 220 T 90 340 Q 130 400 240 400 T 340 300 Q 370 220 300 160 T 240 60"/>
+        <g><circle class="pulse-ring" cx="90" cy="60" r="8"/><circle class="pulse-dot" cx="90" cy="60" r="7"/><text class="route-label" x="106" y="64">Kisumu</text></g>
+        <g><circle class="route-city" cx="120" cy="220" r="6"/><text class="route-label" x="136" y="224">Nakuru</text></g>
+        <g><circle class="pulse-ring" cx="240" cy="400" r="8" style="animation-delay:0.8s"/><circle class="pulse-dot" cx="240" cy="400" r="8"/><text class="route-label" x="256" y="404">Nairobi</text></g>
+        <g><circle class="route-city" cx="340" cy="300" r="6"/><text class="route-label" x="356" y="304">Mombasa</text></g>
+        <g><circle class="pulse-ring" cx="240" cy="60" r="8" style="animation-delay:1.6s"/><circle class="pulse-dot" cx="240" cy="60" r="7"/><text class="route-label" x="256" y="64">Eldoret</text></g>
+      </svg>
+    </div>
+  </div>
+</header>
 
-    <!-- Footer -->
-    <footer class="bg-gray-800 text-white py-6">
-        <div class="container mx-auto px-4 text-center">
-            <p>© 2025 MeetNMingle.net. All rights reserved.</p>
-            <div class="mt-4">
-                <a href="#" class="px-2 hover:underline">Privacy Policy</a>
-                <a href="#" class="px-2 hover:underline">Terms of Service</a>
-            </div>
-        </div>
-    </footer>
+<section>
+  <div class="section-head">
+    <span class="eyebrow">Why it's different</span>
+    <h2 class="display">Matching that's actually about you.</h2>
+    <p>Not just looks — real interests, real behaviour ratings, real accountability.</p>
+  </div>
+  <div class="feature-grid">
+    <div class="card feature-card">
+      <div class="icon" style="background:rgba(232,67,95,0.15);">❤️</div>
+      <h3>Interest-based matching</h3>
+      <p>Pick what you're into — from football to church, hustle, or farming. You'll only see people who share it.</p>
+    </div>
+    <div class="card feature-card">
+      <div class="icon" style="background:rgba(243,165,59,0.18);">⭐</div>
+      <h3>5-star behaviour ratings</h3>
+      <p>Every match can rate how someone treated them. Ratings sit right on the profile — no hiding a bad pattern.</p>
+    </div>
+    <div class="card feature-card">
+      <div class="icon" style="background:rgba(31,169,138,0.18);">🛡️</div>
+      <h3>Report fraud & scam profiles</h3>
+      <p>One tap to flag a suspicious profile. Our team reviews every report before anyone gets banned.</p>
+    </div>
+    <div class="card feature-card">
+      <div class="icon" style="background:rgba(232,67,95,0.15);">📷</div>
+      <h3>View-once, no-save media</h3>
+      <p>Share a photo on your own terms — set it to disappear after one view, and block the other person from saving it.</p>
+    </div>
+  </div>
+</section>
 
-    <script src="script.js"></script>
+<section id="safety">
+  <div class="safety-section">
+    <div class="section-head" style="margin-bottom:32px;">
+      <span class="eyebrow" style="color:var(--jade);">Top priority</span>
+      <h2 class="display">Built safety-first.</h2>
+    </div>
+    <div class="safety-list">
+      <div class="safety-item"><div class="dot"></div><div><h4>Fraud & scam reporting</h4><p>Report any profile in two taps. We track patterns across reports, not just one-off complaints.</p></div></div>
+      <div class="safety-item"><div class="dot"></div><div><h4>Disappearing media</h4><p>View-once photos are wiped from our servers the moment they're opened — permanently, not just hidden.</p></div></div>
+      <div class="safety-item"><div class="dot"></div><div><h4>Block & control</h4><p>Block anyone instantly. Blocked users can't see your profile or message you again.</p></div></div>
+      <div class="safety-item"><div class="dot"></div><div><h4>Behaviour accountability</h4><p>Star ratings from real matches follow a profile — patterns of poor behaviour are visible, not hidden.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="section-head">
+    <span class="eyebrow">Simple pricing</span>
+    <h2 class="display">Free to match. Premium to go further.</h2>
+    <p>Upgrade anytime, cancel anytime. All prices in Kenyan shillings.</p>
+  </div>
+  <div class="pricing-grid">
+    <div class="card plan-card">
+      <div style="font-weight:700;">Free</div>
+      <div class="plan-price">KES 0<span>/mo</span></div>
+      <ul><li>Swipe & match by interest</li><li>Text chat with matches</li><li>5-star ratings & reporting</li></ul>
+      <a href="auth.html?mode=register" class="btn btn-outline btn-block">Start free</a>
+    </div>
+    <div class="card plan-card">
+      <div style="font-weight:700; color:var(--cream-dim);">Silver</div>
+      <div class="plan-price">KES 199<span>/mo</span></div>
+      <ul><li>Everything in Free</li><li>Share photos in chat</li><li>See who liked you</li></ul>
+      <a href="pricing.html" class="btn btn-outline btn-block">Choose Silver</a>
+    </div>
+    <div class="card plan-card featured">
+      <span class="plan-badge">Most popular</span>
+      <div style="font-weight:700; color:var(--amber);">Gold</div>
+      <div class="plan-price">KES 299<span>/mo</span></div>
+      <ul><li>Everything in Silver</li><li>Live video calls</li><li>Share documents</li></ul>
+      <a href="pricing.html" class="btn btn-primary btn-block">Choose Gold</a>
+    </div>
+    <div class="card plan-card">
+      <div style="font-weight:700; color:var(--jade);">Diamond</div>
+      <div class="plan-price">KES 399<span>/mo</span></div>
+      <ul><li>Everything in Gold</li><li>Host public live sessions</li><li>Receive paid tips from fans</li></ul>
+      <a href="pricing.html" class="btn btn-jade btn-block">Choose Diamond</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="logo" style="margin-bottom:10px;">meet<em>n</em>mingle</div>
+  <p>Made for Kenya, by Afams Limited. © <span id="yr"></span> MeetNMingle. 18+ only.</p>
+  <script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
+</footer>
+
 </body>
 </html>

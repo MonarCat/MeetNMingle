@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discover — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .stack-wrap { position: relative; height: 74vh; min-height: 480px; max-width: 420px; margin: 0 auto; }
+  .swipe-card {
+    position: absolute; inset: 0; border-radius: var(--radius-lg); overflow: hidden;
+    background: var(--ink-soft); box-shadow: var(--shadow-card); display: flex; flex-direction: column;
+  }
+  .card-photo { height: 56%; background: linear-gradient(180deg, rgba(23,18,31,0) 40%, rgba(23,18,31,0.9)), var(--plum); background-size: cover; background-position: center; position: relative; display:flex; align-items:flex-end; }
+  .card-photo .name-row { padding: 18px; color: var(--cream); }
+  .card-photo .name-row h2 { margin: 0; font-family: var(--font-display); font-size: 1.5rem; }
+  .card-photo .meta-line { font-size: 0.85rem; color: var(--cream-dim); margin-top: 4px; display:flex; gap:10px; align-items:center; }
+  .card-body { padding: 16px 18px; flex: 1; overflow-y: auto; }
+  .card-body .bio { font-size: 0.9rem; color: var(--cream-dim); margin: 0 0 14px; }
+  .shared-tag { background: rgba(31,169,138,0.18); color: var(--jade); }
+  .card-actions { display: flex; justify-content: center; gap: 16px; padding: 16px; }
+  .round-btn { width: 58px; height: 58px; border-radius: 50%; border: none; font-size: 1.4rem; display:flex; align-items:center; justify-content:center; box-shadow: var(--shadow-card); }
+  .round-btn.pass { background: var(--ink-soft); color: var(--cream-dim); border: 1.5px solid rgba(251,244,234,0.15); }
+  .round-btn.like { background: var(--coral); color: var(--cream); }
+  .round-btn.more { width: 44px; height: 44px; background: var(--ink-soft); color: var(--cream-dim); font-size: 1.1rem; border: 1px solid rgba(251,244,234,0.15); position:absolute; top:16px; right:16px; z-index: 5; }
+  .filter-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .filter-bar h1 { font-family: var(--font-display); font-size: 1.5rem; margin:0; }
+
+  .menu-popover { position: absolute; top: 60px; right: 16px; background: var(--ink); border: 1px solid rgba(251,244,234,0.15); border-radius: var(--radius-sm); z-index: 10; overflow: hidden; display: none; }
+  .menu-popover.open { display: block; }
+  .menu-popover button { display:block; width: 100%; text-align:left; padding: 12px 18px; background:none; border:none; color: var(--cream); font-size:0.88rem; }
+  .menu-popover button:hover { background: var(--ink-soft); }
+  .menu-popover button.danger { color: var(--coral); }
+
+  .modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index: 60; display:none; align-items:center; justify-content:center; padding: 20px; }
+  .modal-backdrop.open { display:flex; }
+  .modal { max-width: 380px; width: 100%; padding: 24px; }
+  .modal h3 { margin-top:0; font-family: var(--font-display); }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <div class="filter-bar">
+    <h1 class="display">Discover</h1>
+    <span class="pill" id="candidateCount">…</span>
+  </div>
+
+  <div class="stack-wrap" id="stackWrap">
+    <div class="empty-state" id="loadingState"><div class="spinner" style="margin:0 auto 14px;"></div>Finding people near your interests…</div>
+  </div>
+
+  <div class="card-actions" id="cardActions" style="display:none;">
+    <button class="round-btn pass" id="passBtn" aria-label="Pass">✕</button>
+    <button class="round-btn like" id="likeBtn" aria-label="Like">❤️</button>
+  </div>
+</div>
+
+<div class="menu-popover" id="menuPopover">
+  <button id="reportOpenBtn">🚩 Report profile</button>
+  <button id="blockBtn" class="danger">🚫 Block user</button>
+</div>
+
+<div class="modal-backdrop" id="reportModal">
+  <div class="card modal">
+    <h3>Report this profile</h3>
+    <div class="field">
+      <label>Reason</label>
+      <select id="reportReason">
+        <option value="fraud">Fraud / financial scam</option>
+        <option value="fake_profile">Fake profile</option>
+        <option value="harassment">Harassment</option>
+        <option value="inappropriate_content">Inappropriate content</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Details (optional)</label>
+      <textarea id="reportDetails" rows="3"></textarea>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-outline btn-block" id="reportCancelBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="reportSubmitBtn">Submit report</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile, calcAge } from './js/supabaseClient.js';
+  import { renderTabbar } from './js/tabbar.js';
+  renderTabbar('discover');
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  let session, me;
+  let queue = [];
+  let myInterestIds = new Set();
+
+  const stackWrap = document.getElementById('stackWrap');
+  const cardActions = document.getElementById('cardActions');
+  const menuPopover = document.getElementById('menuPopover');
+  let currentCandidate = null;
+
+  async function loadCandidates() {
+    const { data: mySwipes } = await supabase.from('swipes').select('swiped_id').eq('swiper_id', me.id);
+    const { data: myBlocks } = await supabase.from('blocked_users').select('blocked_id').eq('blocker_id', me.id);
+    const excludeIds = new Set([me.id, ...(mySwipes||[]).map(s=>s.swiped_id), ...(myBlocks||[]).map(b=>b.blocked_id)]);
+
+    const { data: myInterests } = await supabase.from('profile_interests').select('interest_id').eq('profile_id', me.id);
+    myInterestIds = new Set((myInterests||[]).map(i => i.interest_id));
+
+    let query = supabase.from('profiles').select('*')
+      .in('gender', me.interested_in)
+      .contains('interested_in', [me.gender])
+      .limit(80);
+    const { data: candidates, error } = await query;
+    if (error) { console.error(error); toast('Could not load profiles', 'error'); return; }
+
+    const filtered = (candidates||[]).filter(c => !excludeIds.has(c.id));
+    if (filtered.length === 0) { queue = []; return; }
+
+    const { data: allInterests } = await supabase.from('profile_interests')
+      .select('profile_id, interest_id')
+      .in('profile_id', filtered.map(c => c.id));
+
+    const interestMap = {};
+    (allInterests||[]).forEach(row => {
+      if (!interestMap[row.profile_id]) interestMap[row.profile_id] = new Set();
+      interestMap[row.profile_id].add(row.interest_id);
+    });
+
+    filtered.forEach(c => {
+      const theirs = interestMap[c.id] || new Set();
+      c._shared = [...theirs].filter(i => myInterestIds.has(i)).length;
+      c._interestIds = theirs;
+    });
+
+    queue = filtered.sort((a,b) => b._shared - a._shared);
+  }
+
+  async function fetchInterestNames(ids) {
+    if (!ids || ids.size === 0) return [];
+    const { data } = await supabase.from('interests').select('id,name').in('id', Array.from(ids));
+    return data || [];
+  }
+
+  async function renderTop() {
+    document.getElementById('candidateCount').textContent = `${queue.length} nearby`;
+    stackWrap.innerHTML = '';
+    if (queue.length === 0) {
+      cardActions.style.display = 'none';
+      stackWrap.innerHTML = `<div class="empty-state">
+        <div style="font-size:2.5rem;">🌍</div>
+        <p>No new profiles right now. Check back soon, or widen your interests to see more people.</p>
+      </div>`;
+      return;
+    }
+    cardActions.style.display = 'flex';
+    currentCandidate = queue[0];
+    const c = currentCandidate;
+    const interestNames = await fetchInterestNames(c._interestIds);
+
+    const card = document.createElement('div');
+    card.className = 'swipe-card';
+    const photoStyle = c.avatar_url ? `background-image: url('${c.avatar_url}')` : '';
+    card.innerHTML = `
+      <button class="round-btn more" id="moreBtn">⋮</button>
+      <div class="card-photo" style="${photoStyle}">
+        <div class="name-row">
+          <h2>${c.display_name}, ${calcAge(c.date_of_birth)}</h2>
+          <div class="meta-line">
+            <span>📍 ${c.county}${c.town ? ', ' + c.town : ''}</span>
+            ${c.ratings_count > 0 ? `<span class="stars">★ ${c.average_rating}</span>` : '<span>New here</span>'}
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        ${c.bio ? `<p class="bio">${c.bio}</p>` : ''}
+        <div class="interest-grid" style="display:flex; flex-wrap:wrap; gap:6px;">
+          ${interestNames.map(i => `<span class="pill ${myInterestIds.has(i.id) ? 'shared-tag' : ''}">${i.name}</span>`).join('')}
+        </div>
+      </div>
+    `;
+    stackWrap.appendChild(card);
+    card.querySelector('#moreBtn').onclick = (e) => {
+      e.stopPropagation();
+      menuPopover.classList.toggle('open');
+    };
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#moreBtn') && !e.target.closest('#menuPopover')) menuPopover.classList.remove('open');
+  });
+
+  async function swipe(action) {
+    if (!currentCandidate) return;
+    menuPopover.classList.remove('open');
+    const target = currentCandidate;
+    queue.shift();
+    await renderTop();
+    const { error } = await supabase.from('swipes').insert({ swiper_id: me.id, swiped_id: target.id, action });
+    if (error) { console.error(error); return; }
+    if (action === 'like') {
+      const { data: matchRow } = await supabase.from('matches').select('id')
+        .or(`and(user1_id.eq.${me.id},user2_id.eq.${target.id}),and(user1_id.eq.${target.id},user2_id.eq.${me.id})`)
+        .maybeSingle();
+      if (matchRow) toast(`✨ It's a match with ${target.display_name}!`, 'success');
+    }
+  }
+
+  document.getElementById('passBtn').onclick = () => swipe('dislike');
+  document.getElementById('likeBtn').onclick = () => swipe('like');
+
+  document.getElementById('reportOpenBtn').onclick = () => {
+    menuPopover.classList.remove('open');
+    document.getElementById('reportModal').classList.add('open');
+  };
+  document.getElementById('reportCancelBtn').onclick = () => document.getElementById('reportModal').classList.remove('open');
+  document.getElementById('reportSubmitBtn').onclick = async () => {
+    if (!currentCandidate) return;
+    const { error } = await supabase.from('reports').insert({
+      reporter_id: me.id,
+      reported_id: currentCandidate.id,
+      reason: document.getElementById('reportReason').value,
+      details: document.getElementById('reportDetails').value.trim() || null,
+    });
+    document.getElementById('reportModal').classList.remove('open');
+    if (error) { toast('Could not submit report', 'error'); return; }
+    toast('Report submitted — our team will review it.', 'success');
+  };
+
+  document.getElementById('blockBtn').onclick = async () => {
+    if (!currentCandidate) return;
+    menuPopover.classList.remove('open');
+    const target = currentCandidate;
+    const { error } = await supabase.from('blocked_users').insert({ blocker_id: me.id, blocked_id: target.id });
+    if (error) { toast('Could not block user', 'error'); return; }
+    queue.shift();
+    await renderTop();
+    toast(`Blocked ${target.display_name}`, 'success');
+  };
+
+  (async () => {
+    session = await requireAuth();
+    if (!session) return;
+    me = await requireProfile(session);
+    if (!me) return;
+    await loadCandidates();
+    await renderTop();
+  })();
+</script>
+</body>
+</html>
