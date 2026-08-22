@@ -14,6 +14,10 @@
   .plan-card li { font-size:0.85rem; color:var(--cream-dim); display:flex; gap:8px; }
   .plan-card li::before { content:'✓'; color:var(--jade); font-weight:700; }
   .current-tag { position:absolute; top:-10px; right:20px; background:var(--jade); color:var(--ink); font-size:0.66rem; font-weight:800; padding:4px 10px; border-radius:999px; }
+  .soon-banner { display:flex; align-items:center; gap:12px; padding: 16px 18px; margin-bottom: 20px; background: rgba(243,165,59,0.12); border: 1px solid rgba(243,165,59,0.35); border-radius: var(--radius-md); }
+  .soon-banner .icon { font-size: 1.4rem; }
+  .soon-banner p { margin:0; font-size:0.86rem; color: var(--cream-dim); }
+  .soon-tag { position:absolute; top:-10px; left:20px; background:var(--amber); color:var(--ink); font-size:0.66rem; font-weight:800; padding:4px 10px; border-radius:999px; }
 
   .modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index: 60; display:none; align-items:center; justify-content:center; padding: 20px; }
   .modal-backdrop.open { display:flex; }
@@ -23,7 +27,11 @@
 <body>
 <div class="page-wrap">
   <h1 class="display" style="font-size:1.6rem;">Premium plans</h1>
-  <p style="color:var(--cream-dim); font-size:0.88rem; margin-top:-8px; margin-bottom:20px;">Pay monthly via M-Pesa. Cancel anytime.</p>
+  <p style="color:var(--cream-dim); font-size:0.88rem; margin-top:-8px; margin-bottom:16px;">Cancel anytime once payments are live.</p>
+  <div class="soon-banner">
+    <span class="icon">🛠️</span>
+    <p><strong>Payments are coming soon.</strong> Silver, Gold, and Diamond aren't purchasable yet — we're finishing checkout so you can pay safely. Free features work fully in the meantime.</p>
+  </div>
   <div id="plansList"></div>
 </div>
 
@@ -56,6 +64,7 @@
   }
 
   let me, session, selectedTier = null;
+  const PAYMENTS_ENABLED = false; // flip to true once M-Pesa/Paystack secrets are configured
 
   (async () => {
     session = await requireAuth();
@@ -70,19 +79,25 @@
       const isCurrent = me.subscription_tier === p.tier;
       const card = document.createElement('div');
       card.className = 'card plan-card' + (isCurrent ? ' current' : '');
+      let ctaHtml;
+      if (p.tier === 'free') {
+        ctaHtml = isCurrent ? '' : '<button class="btn btn-outline btn-block" disabled>Downgrade not needed</button>';
+      } else if (!PAYMENTS_ENABLED) {
+        ctaHtml = '<button class="btn btn-outline btn-block" disabled>Coming soon</button>';
+      } else {
+        ctaHtml = `<button class="btn ${isCurrent ? 'btn-outline' : 'btn-primary'} btn-block" data-tier="${p.tier}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? 'Active' : 'Subscribe with M-Pesa'}</button>`;
+      }
       card.innerHTML = `
-        ${isCurrent ? '<span class="current-tag">Your plan</span>' : ''}
+        ${isCurrent ? '<span class="current-tag">Your plan</span>' : (!PAYMENTS_ENABLED && p.tier !== 'free' ? '<span class="soon-tag">Coming soon</span>' : '')}
         <div style="font-weight:700; text-transform:capitalize;">${p.name}</div>
         <div class="plan-price">KES ${p.price_kes}<span>/mo</span></div>
         <ul>${p.features.map(f => `<li>${f}</li>`).join('')}</ul>
-        ${p.tier === 'free'
-          ? (isCurrent ? '' : '<button class="btn btn-outline btn-block" disabled>Downgrade not needed</button>')
-          : `<button class="btn ${isCurrent ? 'btn-outline' : 'btn-primary'} btn-block" data-tier="${p.tier}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? 'Active' : 'Subscribe with M-Pesa'}</button>`
-        }
+        ${ctaHtml}
       `;
       listEl.appendChild(card);
     });
 
+    if (!PAYMENTS_ENABLED) return;
     listEl.querySelectorAll('button[data-tier]').forEach(btn => {
       btn.onclick = () => {
         selectedTier = btn.dataset.tier;
