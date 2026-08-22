@@ -41,6 +41,9 @@
     <div class="row-item"><span>Ratings received</span><span id="ratingsCountVal" style="color:var(--cream-dim);">0</span></div>
   </div>
 
+  <div class="card" style="padding: 8px 18px; margin-bottom:16px; display:none;" id="adminLinkCard">
+  </div>
+
   <div class="card" style="padding: 8px 18px; margin-bottom:16px;">
     <a href="edit-profile.html" style="display:block;">
       <div class="row-item"><span>Edit profile</span><span style="color:var(--coral); font-weight:700;">Edit →</span></div>
@@ -98,6 +101,14 @@
     const badge = document.getElementById('tierBadge');
     badge.textContent = me.subscription_tier.charAt(0).toUpperCase() + me.subscription_tier.slice(1);
     badge.className = 'tier-badge tier-' + me.subscription_tier;
+
+    if (me.is_admin) {
+      const adminCard = document.getElementById('adminLinkCard');
+      adminCard.style.display = 'block';
+      adminCard.innerHTML = `<a href="admin.html" style="display:block;">
+        <div class="row-item"><span>🛡️ Moderation dashboard</span><span style="color:var(--jade); font-weight:700;">Open →</span></div>
+      </a>`;
+    }
 
     document.getElementById('signOutBtn').onclick = async (e) => {
       e.preventDefault();

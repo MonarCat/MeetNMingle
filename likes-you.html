@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Who liked you — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .liker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .liker-card { border-radius: var(--radius-md); overflow: hidden; position: relative; }
+  .liker-photo { height: 190px; background: var(--plum); background-size: cover; background-position: center; }
+  .liker-name { padding: 10px 12px; font-size: 0.85rem; font-weight: 700; }
+  .liker-actions { display:flex; gap:6px; padding: 0 10px 10px; }
+  .liker-actions button { flex:1; padding: 8px; border-radius: 10px; font-size: 0.78rem; font-weight:700; border: none; }
+  .btn-mini-like { background: var(--coral); color: var(--cream); }
+  .btn-mini-pass { background: rgba(251,244,234,0.1); color: var(--cream-dim); }
+
+  .upsell-wrap { position: relative; }
+  .liker-grid.blurred { filter: blur(9px); pointer-events: none; user-select: none; }
+  .upsell-overlay { position: absolute; inset: 0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding: 24px; }
+  .upsell-overlay .icon { font-size: 2.6rem; margin-bottom: 10px; }
+  .upsell-overlay p { color: var(--cream-dim); max-width: 30ch; margin: 0 0 18px; }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <h1 class="display" style="font-size:1.6rem; margin-bottom:6px;">Who liked you</h1>
+  <p style="color:var(--cream-dim); font-size:0.88rem; margin-top:0; margin-bottom:20px;" id="subline">…</p>
+
+  <div class="upsell-wrap">
+    <div id="likerGrid" class="liker-grid"></div>
+    <div class="upsell-overlay" id="upsellOverlay" style="display:none;">
+      <div class="icon">⭐</div>
+      <p>See everyone who's already liked you — upgrade to Silver to unlock this.</p>
+      <a href="pricing.html" class="btn btn-primary">Upgrade to Silver</a>
+    </div>
+  </div>
+  <div id="emptyState" class="empty-state" style="display:none;"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile, calcAge } from './js/supabaseClient.js';
+  import { renderTabbar } from './js/tabbar.js';
+  renderTabbar('matches');
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  let me;
+
+  async function loadLikers() {
+    const { data: likeRows } = await supabase.from('swipes')
+      .select('swiper_id, created_at')
+      .eq('swiped_id', me.id)
+      .in('action', ['like','superlike']);
+    if (!likeRows || likeRows.length === 0) return [];
+
+    const { data: myMatches } = await supabase.from('matches').select('user1_id,user2_id')
+      .or(`user1_id.eq.${me.id},user2_id.eq.${me.id}`);
+    const matchedIds = new Set((myMatches||[]).map(m => m.user1_id === me.id ? m.user2_id : m.user1_id));
+
+    const pendingIds = likeRows.map(r => r.swiper_id).filter(id => !matchedIds.has(id));
+    if (pendingIds.length === 0) return [];
+
+    const { data: profiles } = await supabase.from('profiles').select('*').in('id', pendingIds);
+    return profiles || [];
+  }
+
+  function renderCard(p, isBlurredDemo) {
+    const card = document.createElement('div');
+    card.className = 'card liker-card';
+    card.innerHTML = `
+      <div class="liker-photo" style="${p.avatar_url ? `background-image:url('${p.avatar_url}')` : ''}"></div>
+      <div class="liker-name">${p.display_name}, ${calcAge(p.date_of_birth)}</div>
+      <div class="liker-actions">
+        <button class="btn-mini-pass" data-action="pass" data-id="${p.id}">Pass</button>
+        <button class="btn-mini-like" data-action="like" data-id="${p.id}">Like back</button>
+      </div>
+    `;
+    if (!isBlurredDemo) {
+      card.querySelector('[data-action="like"]').onclick = () => respond(p, 'like');
+      card.querySelector('[data-action="pass"]').onclick = () => respond(p, 'dislike');
+    }
+    return card;
+  }
+
+  async function respond(target, action) {
+    const { error } = await supabase.from('swipes').insert({ swiper_id: me.id, swiped_id: target.id, action });
+    if (error) { toast('Could not save your response', 'error'); return; }
+    if (action === 'like') toast(`✨ It's a match with ${target.display_name}!`, 'success');
+    await render();
+  }
+
+  async function render() {
+    const gridEl = document.getElementById('likerGrid');
+    const emptyEl = document.getElementById('emptyState');
+    const overlayEl = document.getElementById('upsellOverlay');
+    const subline = document.getElementById('subline');
+    gridEl.innerHTML = '';
+    emptyEl.style.display = 'none';
+    overlayEl.style.display = 'none';
+    gridEl.classList.remove('blurred');
+
+    const likers = await loadLikers();
+
+    if (me.subscription_tier === 'free') {
+      subline.textContent = likers.length > 0
+        ? `${likers.length} people have liked you — upgrade to see who.`
+        : `Upgrade to Silver to see who's liked you, the moment it happens.`;
+      if (likers.length > 0) {
+        likers.slice(0, 6).forEach(p => gridEl.appendChild(renderCard(p, true)));
+        gridEl.classList.add('blurred');
+      } else {
+        gridEl.style.minHeight = '220px';
+      }
+      overlayEl.style.display = 'flex';
+      return;
+    }
+
+    subline.textContent = likers.length > 0 ? `${likers.length} people are waiting for you to like them back.` : '';
+    if (likers.length === 0) {
+      emptyEl.style.display = 'block';
+      emptyEl.innerHTML = `<div style="font-size:2.5rem;">💫</div><p>No one new yet — keep your profile fresh and check back soon.</p>`;
+      return;
+    }
+    likers.forEach(p => gridEl.appendChild(renderCard(p, false)));
+  }
+
+  (async () => {
+    const session = await requireAuth();
+    if (!session) return;
+    me = await requireProfile(session);
+    if (!me) return;
+    await render();
+  })();
+</script>
+</body>
+</html>

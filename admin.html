@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .wide-wrap { padding-top: 24px; padding-bottom: 60px; }
+  .report-row { padding: 18px; margin-bottom: 12px; }
+  .report-top { display:flex; justify-content:space-between; align-items:flex-start; gap: 12px; flex-wrap: wrap; }
+  .report-parties { font-size: 0.92rem; }
+  .report-parties b { color: var(--cream); }
+  .report-meta { font-size: 0.76rem; color: var(--cream-dim); margin-top: 4px; }
+  .status-pill { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; }
+  .status-pending { background: rgba(243,165,59,0.18); color: var(--amber); }
+  .status-reviewed { background: rgba(200,200,210,0.18); color: #DADAE0; }
+  .status-actioned { background: rgba(232,67,95,0.18); color: var(--coral); }
+  .status-dismissed { background: rgba(31,169,138,0.18); color: var(--jade); }
+  .banned-tag { background: var(--coral); color: var(--cream); font-size: 0.68rem; font-weight: 800; padding: 3px 8px; border-radius: 999px; margin-left: 6px; }
+  .report-details { font-size: 0.86rem; color: var(--cream-dim); margin: 10px 0; }
+  .report-actions { display:flex; gap:8px; flex-wrap: wrap; margin-top: 10px; }
+  .report-actions button { padding: 7px 14px; border-radius: 999px; border: none; font-size: 0.78rem; font-weight: 700; }
+  .act-review { background: rgba(251,244,234,0.1); color: var(--cream); }
+  .act-dismiss { background: rgba(31,169,138,0.15); color: var(--jade); }
+  .act-ban { background: var(--coral); color: var(--cream); }
+  .act-unban { background: rgba(251,244,234,0.1); color: var(--cream-dim); }
+  .filter-tabs { display:flex; gap:8px; margin-bottom: 20px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wide-wrap">
+  <h1 class="display" style="font-size:1.7rem;">Moderation dashboard</h1>
+  <p style="color:var(--cream-dim); font-size:0.88rem; margin-top:-8px;">All fraud/safety reports across MeetNMingle.</p>
+
+  <div class="filter-tabs" id="filterTabs">
+    <button class="pill selected" data-status="all">All</button>
+    <button class="pill" data-status="pending">Pending</button>
+    <button class="pill" data-status="reviewed">Reviewed</button>
+    <button class="pill" data-status="actioned">Actioned</button>
+    <button class="pill" data-status="dismissed">Dismissed</button>
+  </div>
+
+  <div id="reportsList"><div class="empty-state"><div class="spinner" style="margin:0 auto;"></div></div></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile, timeAgo } from './js/supabaseClient.js';
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  let allReports = [];
+  let currentFilter = 'all';
+
+  function renderList() {
+    const listEl = document.getElementById('reportsList');
+    const filtered = currentFilter === 'all' ? allReports : allReports.filter(r => r.status === currentFilter);
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="empty-state"><p>No reports here.</p></div>`;
+      return;
+    }
+    listEl.innerHTML = '';
+    filtered.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'card report-row';
+      row.innerHTML = `
+        <div class="report-top">
+          <div class="report-parties">
+            <b>${r.reporter_name}</b> reported <b>${r.reported_name}</b>
+            ${r.reported_is_banned ? '<span class="banned-tag">BANNED</span>' : ''}
+            <div class="report-meta">
+              ${timeAgo(r.created_at)} · reason: <strong>${r.reason}</strong> ·
+              ${r.reported_total_reports} total report(s) on this user ·
+              rating ${r.reported_avg_rating ?? '—'}
+            </div>
+          </div>
+          <span class="status-pill status-${r.status}">${r.status}</span>
+        </div>
+        ${r.details ? `<div class="report-details">"${r.details}"</div>` : ''}
+        <div class="report-actions">
+          ${r.status === 'pending' ? '<button class="act-review" data-act="reviewed">Mark reviewed</button>' : ''}
+          ${r.status !== 'dismissed' ? '<button class="act-dismiss" data-act="dismissed">Dismiss</button>' : ''}
+          ${!r.reported_is_banned ? '<button class="act-ban" data-act="ban">Ban user</button>' : '<button class="act-unban" data-act="unban">Unban user</button>'}
+        </div>
+      `;
+      row.querySelectorAll('button[data-act]').forEach(btn => {
+        btn.onclick = () => handleAction(r, btn.dataset.act);
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  async function handleAction(report, act) {
+    if (act === 'reviewed' || act === 'dismissed') {
+      const { error } = await supabase.rpc('admin_update_report_status', { p_report_id: report.id, p_status: act });
+      if (error) { toast(error.message, 'error'); return; }
+      report.status = act;
+    } else if (act === 'ban') {
+      const reason = prompt(`Ban ${report.reported_name}? Enter a reason:`);
+      if (reason === null) return;
+      const { error } = await supabase.rpc('admin_ban_user', { p_user_id: report.reported_id, p_reason: reason || 'Policy violation' });
+      if (error) { toast(error.message, 'error'); return; }
+      allReports.forEach(r => { if (r.reported_id === report.reported_id) { r.reported_is_banned = true; r.status = 'actioned'; } });
+      toast(`${report.reported_name} banned.`, 'success');
+    } else if (act === 'unban') {
+      const { error } = await supabase.rpc('admin_unban_user', { p_user_id: report.reported_id });
+      if (error) { toast(error.message, 'error'); return; }
+      allReports.forEach(r => { if (r.reported_id === report.reported_id) r.reported_is_banned = false; });
+      toast(`${report.reported_name} unbanned.`, 'success');
+    }
+    renderList();
+  }
+
+  document.getElementById('filterTabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-status]');
+    if (!btn) return;
+    document.querySelectorAll('#filterTabs .pill').forEach(p => p.classList.remove('selected'));
+    btn.classList.add('selected');
+    currentFilter = btn.dataset.status;
+    renderList();
+  });
+
+  (async () => {
+    const session = await requireAuth();
+    if (!session) return;
+    const me = await requireProfile(session);
+    if (!me) return;
+    if (!me.is_admin) {
+      document.body.innerHTML = `<div class="page-wrap"><div class="empty-state"><p>You don't have access to this page.</p><a href="discover.html" class="btn btn-primary">Back to Discover</a></div></div>`;
+      return;
+    }
+    const { data, error } = await supabase.rpc('admin_list_reports');
+    if (error) { toast(error.message, 'error'); return; }
+    allReports = data || [];
+    renderList();
+  })();
+</script>
+</body>
+</html>

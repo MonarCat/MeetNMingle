@@ -37,6 +37,9 @@
         <label>Password</label>
         <input type="password" id="loginPassword" required autocomplete="current-password">
       </div>
+      <div style="text-align:right; margin:-8px 0 16px;">
+        <a href="forgot-password.html" style="font-size:0.8rem; color:var(--coral); font-weight:700;">Forgot password?</a>
+      </div>
       <div id="loginError" class="field-error"></div>
       <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Log in</button>
     </form>
@@ -51,6 +54,12 @@
         <input type="password" id="regPassword" required minlength="6" autocomplete="new-password">
       </div>
       <p class="hint">At least 6 characters. You must be 18+ to join MeetNMingle.</p>
+      <div class="checkbox-row" style="display:flex; align-items:flex-start; gap:8px; margin-bottom:16px;">
+        <input type="checkbox" id="agreeTerms" required style="margin-top:3px;">
+        <label for="agreeTerms" style="font-size:0.8rem; color:var(--cream-dim); font-weight:400;">
+          I'm 18+ and agree to the <a href="terms.html" target="_blank" style="color:var(--coral);">Terms</a> and <a href="privacy.html" target="_blank" style="color:var(--coral);">Privacy Policy</a>.
+        </label>
+      </div>
       <div id="registerError" class="field-error"></div>
       <button type="submit" class="btn btn-primary btn-block" id="registerBtn">Create account</button>
     </form>
@@ -126,6 +135,10 @@
     const btn = document.getElementById('registerBtn');
     const errEl = document.getElementById('registerError');
     errEl.textContent = '';
+    if (!document.getElementById('agreeTerms').checked) {
+      errEl.textContent = 'You must agree to the Terms and Privacy Policy.';
+      return;
+    }
     btn.disabled = true; btn.textContent = 'Creating account…';
     const { data, error } = await supabase.auth.signUp({
       email: document.getElementById('regEmail').value.trim(),

@@ -33,6 +33,7 @@ export async function requireAuth() {
 }
 
 // Guard: if profile onboarding isn't complete, send the user to finish it.
+// If the account is banned, show a clear message instead of bouncing into onboarding.
 export async function requireProfile(session) {
   const { data, error } = await supabase
     .from('profiles')
@@ -42,6 +43,14 @@ export async function requireProfile(session) {
   if (error) console.error(error);
   if (!data) {
     window.location.href = '/onboarding.html';
+    return null;
+  }
+  if (data.is_banned) {
+    document.body.innerHTML = `<div style="max-width:420px; margin:15vh auto; text-align:center; padding:24px; font-family:sans-serif; color:#FBF4EA;">
+      <h2 style="font-family:'Fraunces',serif;">Account suspended</h2>
+      <p style="color:#E9DFD2;">${data.ban_reason ? data.ban_reason : 'Your account was suspended for violating MeetNMingle\'s Terms of Service.'}</p>
+      <p style="color:#E9DFD2; font-size:0.85rem;">Contact support via afams.co.ke if you believe this is a mistake.</p>
+    </div>`;
     return null;
   }
   return data;

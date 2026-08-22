@@ -13,13 +13,21 @@ accountability built in from day one.
 
 ## Features implemented
 
-- **Auth** — email/password sign up & login (`auth.html`), Supabase Auth.
+- **Auth** — email/password sign up & login (`auth.html`), Supabase Auth,
+  plus forgot/reset password (`forgot-password.html`, `reset-password.html`).
+- **Legal** — `terms.html` and `privacy.html`, linked from the landing page
+  footer and required (checkbox) at sign-up.
 - **Onboarding** (`onboarding.html`) — profile creation: display name, DOB
   (18+ enforced both client- and DB-side), gender & who you're interested in,
   county/town, bio, avatar upload, and interest selection.
+- **Edit profile** (`edit-profile.html`) — update any of the above after
+  onboarding, linked from `profile.html`.
 - **Discover** (`discover.html`) — candidate profiles filtered by mutual
-  gender preference, ranked by number of shared interests. Like/Pass, with a
-  mutual-like auto-creating a match (DB trigger).
+  gender preference, ranked by number of shared interests, with filters for
+  county, age range, minimum rating, and required shared interests. Like/Pass,
+  with a mutual-like auto-creating a match (DB trigger).
+- **Who liked you** (`likes-you.html`) — Silver+ feature; Free users see a
+  blurred teaser with an upgrade prompt.
 - **Matches & chat** (`matches.html`, `chat.html`) — real-time messaging
   (Supabase Realtime), photo sharing with:
   - **View once** — media is deleted from storage the instant the recipient
@@ -31,6 +39,14 @@ accountability built in from day one.
   averaged onto each profile (`profile.html`, trigger-maintained aggregates).
 - **Safety** — report fraud/scam/harassment/etc. profiles, and block users,
   both from the Discover card menu.
+- **Moderation dashboard** (`admin.html`) — visible only to accounts with
+  `profiles.is_admin = true`. Lists every report with reporter/reported
+  names, the reported user's rating and total report count, lets a moderator
+  mark reports reviewed/dismissed, and ban/unban the reported user — all via
+  `SECURITY DEFINER` RPCs (`admin_list_reports`, `admin_update_report_status`,
+  `admin_ban_user`, `admin_unban_user`) so no broad RLS bypass is needed.
+  Currently granted to `mwombe007@gmail.com`. To add another admin:
+  `update public.profiles set is_admin = true where id = '<user-id>';`
 - **Subscriptions** (`pricing.html`) — Silver (KES 199), Gold (KES 299),
   Diamond (KES 399) tiers, paid via **M-Pesa STK Push** through two Supabase
   Edge Functions (`mpesa-stkpush`, `mpesa-callback`). Photo sharing in chat is
@@ -46,13 +62,19 @@ accountability built in from day one.
      `MPESA_SHORTCODE`, `MPESA_ENV` (`sandbox` or `production`)
    - `MPESA_CALLBACK_URL` = `https://wstbqyvamueahmmvgqjl.supabase.co/functions/v1/mpesa-callback`
    Get these from the [Safaricom Daraja portal](https://developer.safaricom.co.ke/).
-2. **Live video calls & public live sessions** (Gold/Diamond perk) — the
+2. **Paystack** — planned as an alternative/additional payment provider.
+   `user_subscriptions.payment_provider` already supports either value.
+3. **Live video calls & public live sessions** (Gold/Diamond perk) — the
    database has scaffolding (`live_sessions`, `live_session_tips`) but actual
    video needs a WebRTC provider (e.g. Agora, Daily.co, or Twilio Video).
    Wire the provider's SDK into a new `live.html` once you've picked one.
-3. **Google AdSense** — once the site is live on a real domain, apply for
+4. **Google AdSense** — once the site is live on a real domain, apply for
    AdSense, then drop your `ca-pub-XXXXXXXXXXXX` script tag into the `<head>`
    of `index.html` (and any other pages you want ads on).
+5. **Email templates** — Supabase's default confirmation/reset emails are
+   plain. Customize them under Auth → Email Templates in the dashboard.
+6. **Content moderation on uploads** — nothing currently screens photos
+   before they hit storage; worth adding before wide public launch.
 
 ## Database
 
