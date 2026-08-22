@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edit profile — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  .interest-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .avatar-picker { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+  .avatar-preview { width: 84px; height: 84px; border-radius: 50%; background: var(--ink); background-size: cover; background-position: center; border: 2px dashed rgba(251,244,234,0.2); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: var(--cream-dim); flex-shrink: 0; overflow: hidden; }
+  .back-link { display:inline-block; margin-bottom: 14px; color: var(--cream-dim); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <a href="profile.html" class="back-link">← Back to profile</a>
+  <h1 class="display" style="font-size:1.5rem; margin-bottom:20px;">Edit your profile</h1>
+
+  <form id="editForm" class="card" style="padding:26px;">
+    <div class="avatar-picker">
+      <div class="avatar-preview" id="avatarPreview">Photo</div>
+      <div>
+        <input type="file" id="avatarFile" accept="image/*" style="display:none;">
+        <button type="button" class="btn btn-outline btn-sm" id="pickAvatarBtn">Change photo</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Display name</label>
+      <input type="text" id="displayName" required maxlength="40">
+    </div>
+
+    <div class="field">
+      <label>I am</label>
+      <select id="gender" required>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+        <option value="nonbinary">Non-binary</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Interested in (select all that apply)</label>
+      <div id="interestedInPicker" class="interest-grid"></div>
+    </div>
+
+    <div class="field">
+      <label>County</label>
+      <select id="county" required></select>
+    </div>
+
+    <div class="field">
+      <label>Town / area (optional)</label>
+      <input type="text" id="town" maxlength="60">
+    </div>
+
+    <div class="field">
+      <label>Bio</label>
+      <textarea id="bio" rows="3" maxlength="300"></textarea>
+    </div>
+
+    <div class="field">
+      <label>Your interests</label>
+      <div id="interestsPicker" class="interest-grid"></div>
+    </div>
+
+    <div id="formError" class="field-error" style="margin-bottom:14px;"></div>
+    <button type="submit" class="btn btn-primary btn-block" id="saveBtn">Save changes</button>
+  </form>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile, KENYAN_COUNTIES } from './js/supabaseClient.js';
+
+  let session, me;
+  let avatarBlob = null;
+  const selectedInterests = new Set();
+  const selectedGenders = new Set();
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  const countySelect = document.getElementById('county');
+  countySelect.innerHTML = KENYAN_COUNTIES.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  const genderPicker = document.getElementById('interestedInPicker');
+  ['male','female','nonbinary','other'].forEach(g => {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'pill';
+    pill.textContent = g.charAt(0).toUpperCase() + g.slice(1);
+    pill.dataset.g = g;
+    pill.onclick = () => {
+      if (selectedGenders.has(g)) { selectedGenders.delete(g); pill.classList.remove('selected'); }
+      else { selectedGenders.add(g); pill.classList.add('selected'); }
+    };
+    genderPicker.appendChild(pill);
+  });
+
+  document.getElementById('pickAvatarBtn').onclick = () => document.getElementById('avatarFile').click();
+  document.getElementById('avatarFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    avatarBlob = file;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      document.getElementById('avatarPreview').style.backgroundImage = `url(${ev.target.result})`;
+      document.getElementById('avatarPreview').textContent = '';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  async function loadInterests(myInterestIds) {
+    const { data } = await supabase.from('interests').select('id,name').order('name');
+    const picker = document.getElementById('interestsPicker');
+    (data||[]).forEach(interest => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'pill' + (myInterestIds.has(interest.id) ? ' selected' : '');
+      pill.textContent = interest.name;
+      if (myInterestIds.has(interest.id)) selectedInterests.add(interest.id);
+      pill.onclick = () => {
+        if (selectedInterests.has(interest.id)) { selectedInterests.delete(interest.id); pill.classList.remove('selected'); }
+        else { selectedInterests.add(interest.id); pill.classList.add('selected'); }
+      };
+      picker.appendChild(pill);
+    });
+  }
+
+  (async () => {
+    session = await requireAuth();
+    if (!session) return;
+    me = await requireProfile(session);
+    if (!me) return;
+
+    document.getElementById('displayName').value = me.display_name;
+    document.getElementById('gender').value = me.gender;
+    countySelect.value = me.county;
+    document.getElementById('town').value = me.town || '';
+    document.getElementById('bio').value = me.bio || '';
+    if (me.avatar_url) {
+      document.getElementById('avatarPreview').style.backgroundImage = `url('${me.avatar_url}')`;
+      document.getElementById('avatarPreview').textContent = '';
+    }
+    (me.interested_in || []).forEach(g => {
+      selectedGenders.add(g);
+      const pill = genderPicker.querySelector(`[data-g="${g}"]`);
+      if (pill) pill.classList.add('selected');
+    });
+
+    const { data: myInterests } = await supabase.from('profile_interests').select('interest_id').eq('profile_id', me.id);
+    await loadInterests(new Set((myInterests||[]).map(i => i.interest_id)));
+  })();
+
+  document.getElementById('editForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('formError');
+    errEl.textContent = '';
+    if (selectedGenders.size === 0) { errEl.textContent = 'Select who you\'re interested in.'; return; }
+    if (selectedInterests.size === 0) { errEl.textContent = 'Pick at least one interest.'; return; }
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    let avatarUrl = me.avatar_url;
+    if (avatarBlob) {
+      const path = `${session.user.id}/${Date.now()}-${avatarBlob.name}`;
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, avatarBlob, { upsert: true });
+      if (upErr) { errEl.textContent = 'Photo upload failed: ' + upErr.message; btn.disabled = false; btn.textContent = 'Save changes'; return; }
+      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+      avatarUrl = pub.publicUrl;
+    }
+
+    const { error: updErr } = await supabase.from('profiles').update({
+      display_name: document.getElementById('displayName').value.trim(),
+      gender: document.getElementById('gender').value,
+      interested_in: Array.from(selectedGenders),
+      county: countySelect.value,
+      town: document.getElementById('town').value.trim() || null,
+      bio: document.getElementById('bio').value.trim() || null,
+      avatar_url: avatarUrl,
+    }).eq('id', me.id);
+
+    if (updErr) {
+      errEl.textContent = updErr.message;
+      btn.disabled = false; btn.textContent = 'Save changes';
+      return;
+    }
+
+    // sync interests: delete all, re-insert selected (simplest correct approach)
+    await supabase.from('profile_interests').delete().eq('profile_id', me.id);
+    const rows = Array.from(selectedInterests).map(interest_id => ({ profile_id: me.id, interest_id }));
+    if (rows.length) await supabase.from('profile_interests').insert(rows);
+
+    toast('Profile updated!', 'success');
+    setTimeout(() => window.location.href = 'profile.html', 900);
+  });
+</script>
+</body>
+</html>

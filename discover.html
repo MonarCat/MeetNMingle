@@ -34,15 +34,22 @@
 
   .modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index: 60; display:none; align-items:center; justify-content:center; padding: 20px; }
   .modal-backdrop.open { display:flex; }
-  .modal { max-width: 380px; width: 100%; padding: 24px; }
+  .modal { max-width: 380px; width: 100%; padding: 24px; max-height: 82vh; overflow-y: auto; }
   .modal h3 { margin-top:0; font-family: var(--font-display); }
+  .age-range-row { display:flex; gap: 10px; }
+  .age-range-row .field { flex:1; margin-bottom: 0; }
+  .filter-btn { display:flex; align-items:center; gap:6px; }
+  .filter-btn .badge { background: var(--coral); color:var(--cream); font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:999px; }
 </style>
 </head>
 <body>
 <div class="page-wrap">
   <div class="filter-bar">
     <h1 class="display">Discover</h1>
-    <span class="pill" id="candidateCount">…</span>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <span class="pill" id="candidateCount">…</span>
+      <button type="button" class="pill filter-btn" id="filterOpenBtn">⚙ Filters</button>
+    </div>
   </div>
 
   <div class="stack-wrap" id="stackWrap">
@@ -84,10 +91,47 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="filterModal">
+  <div class="card modal">
+    <h3>Filter Discover</h3>
+    <div class="field">
+      <label>County</label>
+      <select id="filterCounty"><option value="">Any county</option></select>
+    </div>
+    <div class="age-range-row">
+      <div class="field">
+        <label>Min age</label>
+        <input type="number" id="filterMinAge" min="18" max="99" value="18">
+      </div>
+      <div class="field">
+        <label>Max age</label>
+        <input type="number" id="filterMaxAge" min="18" max="99" value="99">
+      </div>
+    </div>
+    <div class="field">
+      <label>Minimum rating</label>
+      <select id="filterMinRating">
+        <option value="0">Any rating</option>
+        <option value="3">★ 3.0 and up</option>
+        <option value="4">★ 4.0 and up</option>
+        <option value="4.5">★ 4.5 and up</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Must share at least one of these interests</label>
+      <div id="filterInterestsPicker" class="interest-grid" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:6px;">
+      <button type="button" class="btn btn-outline btn-block" id="filterResetBtn">Reset</button>
+      <button type="button" class="btn btn-primary btn-block" id="filterApplyBtn">Apply filters</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  import { supabase, requireAuth, requireProfile, calcAge } from './js/supabaseClient.js';
+  import { supabase, requireAuth, requireProfile, calcAge, KENYAN_COUNTIES } from './js/supabaseClient.js';
   import { renderTabbar } from './js/tabbar.js';
   renderTabbar('discover');
 
@@ -99,12 +143,67 @@
 
   let session, me;
   let queue = [];
+  let allCandidates = [];
   let myInterestIds = new Set();
+  const filters = { county: '', minAge: 18, maxAge: 99, minRating: 0, interestIds: new Set() };
 
   const stackWrap = document.getElementById('stackWrap');
   const cardActions = document.getElementById('cardActions');
   const menuPopover = document.getElementById('menuPopover');
   let currentCandidate = null;
+
+  // ---- filter modal setup ----
+  const filterCountySelect = document.getElementById('filterCounty');
+  filterCountySelect.innerHTML += KENYAN_COUNTIES.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  async function setupFilterInterests() {
+    const { data } = await supabase.from('interests').select('id,name').order('name');
+    const picker = document.getElementById('filterInterestsPicker');
+    (data||[]).forEach(interest => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'pill';
+      pill.textContent = interest.name;
+      pill.onclick = () => {
+        if (filters.interestIds.has(interest.id)) { filters.interestIds.delete(interest.id); pill.classList.remove('selected'); }
+        else { filters.interestIds.add(interest.id); pill.classList.add('selected'); }
+      };
+      picker.appendChild(pill);
+    });
+  }
+
+  document.getElementById('filterOpenBtn').onclick = () => document.getElementById('filterModal').classList.add('open');
+  document.getElementById('filterResetBtn').onclick = () => {
+    filters.county = ''; filters.minAge = 18; filters.maxAge = 99; filters.minRating = 0; filters.interestIds.clear();
+    filterCountySelect.value = '';
+    document.getElementById('filterMinAge').value = 18;
+    document.getElementById('filterMaxAge').value = 99;
+    document.getElementById('filterMinRating').value = '0';
+    document.querySelectorAll('#filterInterestsPicker .pill').forEach(p => p.classList.remove('selected'));
+  };
+  document.getElementById('filterApplyBtn').onclick = () => {
+    filters.county = filterCountySelect.value;
+    filters.minAge = parseInt(document.getElementById('filterMinAge').value) || 18;
+    filters.maxAge = parseInt(document.getElementById('filterMaxAge').value) || 99;
+    filters.minRating = parseFloat(document.getElementById('filterMinRating').value) || 0;
+    document.getElementById('filterModal').classList.remove('open');
+    applyFilters();
+  };
+
+  function applyFilters() {
+    queue = allCandidates.filter(c => {
+      const age = calcAge(c.date_of_birth);
+      if (age < filters.minAge || age > filters.maxAge) return false;
+      if (filters.county && c.county !== filters.county) return false;
+      if (filters.minRating > 0 && parseFloat(c.average_rating) < filters.minRating) return false;
+      if (filters.interestIds.size > 0) {
+        const hasOverlap = [...c._interestIds].some(id => filters.interestIds.has(id));
+        if (!hasOverlap) return false;
+      }
+      return true;
+    });
+    renderTop();
+  }
 
   async function loadCandidates() {
     const { data: mySwipes } = await supabase.from('swipes').select('swiped_id').eq('swiper_id', me.id);
@@ -122,7 +221,7 @@
     if (error) { console.error(error); toast('Could not load profiles', 'error'); return; }
 
     const filtered = (candidates||[]).filter(c => !excludeIds.has(c.id));
-    if (filtered.length === 0) { queue = []; return; }
+    if (filtered.length === 0) { allCandidates = []; queue = []; return; }
 
     const { data: allInterests } = await supabase.from('profile_interests')
       .select('profile_id, interest_id')
@@ -140,7 +239,8 @@
       c._interestIds = theirs;
     });
 
-    queue = filtered.sort((a,b) => b._shared - a._shared);
+    allCandidates = filtered.sort((a,b) => b._shared - a._shared);
+    queue = [...allCandidates];
   }
 
   async function fetchInterestNames(ids) {
@@ -202,6 +302,7 @@
     menuPopover.classList.remove('open');
     const target = currentCandidate;
     queue.shift();
+    allCandidates = allCandidates.filter(c => c.id !== target.id);
     await renderTop();
     const { error } = await supabase.from('swipes').insert({ swiper_id: me.id, swiped_id: target.id, action });
     if (error) { console.error(error); return; }
@@ -241,6 +342,7 @@
     const { error } = await supabase.from('blocked_users').insert({ blocker_id: me.id, blocked_id: target.id });
     if (error) { toast('Could not block user', 'error'); return; }
     queue.shift();
+    allCandidates = allCandidates.filter(c => c.id !== target.id);
     await renderTop();
     toast(`Blocked ${target.display_name}`, 'success');
   };
@@ -250,6 +352,7 @@
     if (!session) return;
     me = await requireProfile(session);
     if (!me) return;
+    await setupFilterInterests();
     await loadCandidates();
     await renderTop();
   })();
