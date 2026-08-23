@@ -18,7 +18,7 @@
 
   #stageWrap { display:none; }
   #stageWrap.open { display:block; }
-  #localVideo, #remoteVideo { width: 100%; aspect-ratio: 16/9; background: var(--ink); border-radius: var(--radius-md); overflow: hidden; }
+  #localVideo, #remoteVideo { width: 100%; aspect-ratio: 16/9; background: var(--ink); border-radius: var(--radius-md); overflow: hidden; position: relative; }
   .stage-controls { display:flex; gap:10px; justify-content:center; margin-top:14px; flex-wrap: wrap; }
   .stage-meta { text-align:center; margin: 14px 0; }
   .tip-row { display:flex; gap:8px; justify-content:center; margin-top:14px; flex-wrap: wrap; }
@@ -51,6 +51,17 @@
   .audience-row .aud-tip.tipped { color: var(--amber); }
   .audience-row .aud-tip.not-tipped { color: var(--cream-dim); }
   .kick-btn { background: transparent; border: 1.5px solid var(--coral); color: var(--coral); border-radius: 999px; padding: 4px 10px; font-size: 0.7rem; font-weight:700; flex-shrink:0; }
+
+  /* Media consent + camera flip */
+  .consent-modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index: 80; display:none; align-items:center; justify-content:center; padding: 20px; }
+  .consent-modal-backdrop.open { display:flex; }
+  .consent-modal { max-width: 380px; width:100%; padding: 26px 24px; text-align:center; }
+  .consent-modal .icon { font-size: 2.4rem; margin-bottom: 8px; }
+  .consent-modal p { color: var(--cream-dim); font-size: 0.86rem; margin: 6px 0 20px; }
+  .consent-modal .btn { margin-bottom: 10px; }
+  #flipCamBtn { display:none; }
+  .audio-only-indicator { display:none; position:absolute; inset:0; flex-direction:column; align-items:center; justify-content:center; gap:8px; background: var(--plum); color:var(--cream); z-index:1; }
+  .audio-only-indicator .icon { font-size: 2.6rem; }
 </style>
 </head>
 <body>
@@ -72,7 +83,12 @@
 
   <div id="stageWrap">
     <div id="remoteVideo"></div>
-    <div id="localVideo" style="display:none;"></div>
+    <div id="localVideo" style="display:none;">
+      <div class="audio-only-indicator" id="localAudioOnlyIndicator">
+        <div class="icon">🎙️</div>
+        <div>Audio-only — no camera</div>
+      </div>
+    </div>
     <div class="stage-meta">
       <div id="stageTitle" style="font-weight:700;"></div>
       <div id="stageHost" style="color:var(--cream-dim); font-size:0.85rem;"></div>
@@ -81,6 +97,7 @@
     <div class="stage-controls" id="hostControls" style="display:none;">
       <button class="btn btn-outline" id="toggleMicBtn">🎤 Mute</button>
       <button class="btn btn-outline" id="toggleCamBtn">📷 Hide cam</button>
+      <button class="btn btn-outline" id="flipCamBtn">🔄 Flip camera</button>
       <button class="btn btn-outline" id="audienceToggleBtn">👥 Audience (0)</button>
       <button class="btn btn-outline" id="editTipsBtn">💛 Edit tip amounts</button>
       <button class="btn" style="background:var(--coral); color:var(--cream);" id="endLiveBtn">End live</button>
@@ -100,6 +117,17 @@
         <button class="live-chat-send" id="liveChatSendBtn">➤</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="consent-modal-backdrop" id="consentModal">
+  <div class="card consent-modal">
+    <div class="icon">🎥</div>
+    <h3 class="display" style="margin: 0 0 4px;">Go live</h3>
+    <p>MeetNMingle needs access to your camera and microphone to start your stream. Your browser will ask you to allow this next.</p>
+    <button class="btn btn-primary btn-block" id="consentAllowBtn">Allow camera &amp; mic</button>
+    <button class="btn btn-outline btn-block" id="consentAudioOnlyBtn">Audio only (no camera)</button>
+    <button class="btn btn-outline btn-block" id="consentCancelBtn" style="border:none; color:var(--cream-dim);">Cancel</button>
   </div>
 </div>
 
@@ -146,8 +174,10 @@
   let heartbeatInterval = null;
   function startHeartbeat() {
     if (!isHosting || !currentSession) return;
-    heartbeatInterval = setInterval(() => {
-      supabase.rpc('heartbeat_live_session', { p_session_id: currentSession.id }).catch(e => console.error(e));
+    heartbeatInterval = setInterval(async () => {
+      try {
+        await supabase.rpc('heartbeat_live_session', { p_session_id: currentSession.id });
+      } catch (e) { console.error(e); }
     }, 20000);
   }
   function stopHeartbeat() {
@@ -450,6 +480,9 @@
     document.getElementById('tipRow').style.display = 'none';
     document.getElementById('audiencePanel').classList.remove('open');
     document.getElementById('audiencePanel').innerHTML = '';
+    document.getElementById('flipCamBtn').style.display = 'none';
+    document.getElementById('localAudioOnlyIndicator').style.display = 'none';
+    cameraDevices = []; cameraDeviceIndex = 0;
   }
 
   async function joinAsAudience(s) {
@@ -480,6 +513,76 @@
     }
   }
 
+  // ---------- Camera/mic acquisition + flip ----------
+  // Requests mic and camera independently so a missing/blocked device
+  // (common on desktops with no webcam, or when the host picks "audio
+  // only") doesn't kill the whole flow -- if no camera ends up available,
+  // the stream just continues as audio-only, clearly labeled as such.
+  async function acquireLocalTracks(wantCamera) {
+    const warnings = [];
+    let mic = null, cam = null;
+    try {
+      mic = await AgoraRTC.createMicrophoneAudioTrack();
+    } catch (e) {
+      console.error('mic track failed', e);
+      warnings.push(e?.code === 'PERMISSION_DENIED' || e?.name === 'NotAllowedError'
+        ? 'Microphone permission was denied' : 'No microphone was found');
+    }
+    if (wantCamera) {
+      try {
+        cam = await AgoraRTC.createCameraVideoTrack();
+      } catch (e) {
+        console.error('camera track failed', e);
+        warnings.push(e?.code === 'PERMISSION_DENIED' || e?.name === 'NotAllowedError'
+          ? 'Camera permission was denied' : 'No camera was found');
+      }
+    }
+    if (!mic && !cam) {
+      throw new Error('No camera or microphone is available. Check your device and browser permissions.');
+    }
+    return { mic, cam, warnings };
+  }
+
+  let cameraDevices = [], cameraDeviceIndex = 0;
+  async function refreshCameraDeviceList() {
+    try {
+      const devices = await AgoraRTC.getCameras();
+      cameraDevices = devices || [];
+    } catch (e) {
+      cameraDevices = [];
+    }
+    document.getElementById('flipCamBtn').style.display = (localTracks.cam && cameraDevices.length > 1) ? 'inline-flex' : 'none';
+  }
+  async function flipCamera() {
+    if (!localTracks.cam || cameraDevices.length < 2) return;
+    cameraDeviceIndex = (cameraDeviceIndex + 1) % cameraDevices.length;
+    try {
+      await localTracks.cam.setDevice(cameraDevices[cameraDeviceIndex].deviceId);
+      toast('Switched camera.', '');
+    } catch (e) {
+      toast('Could not switch camera.', 'error');
+    }
+  }
+  document.getElementById('flipCamBtn').onclick = flipCamera;
+
+  function setLocalVideoPresentation(hasCam) {
+    document.getElementById('localVideo').style.display = 'block';
+    document.getElementById('localAudioOnlyIndicator').style.display = hasCam ? 'none' : 'flex';
+    document.getElementById('remoteVideo').style.display = 'none';
+  }
+
+  // ---------- In-app camera/mic consent ----------
+  function askMediaConsent() {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('consentModal');
+      modal.classList.add('open');
+      const cleanup = (result) => { modal.classList.remove('open'); resolve(result); };
+      document.getElementById('consentAllowBtn').onclick = () => cleanup('camera');
+      document.getElementById('consentAudioOnlyBtn').onclick = () => cleanup('audio');
+      document.getElementById('consentCancelBtn').onclick = () => cleanup(null);
+    });
+  }
+
   document.getElementById('leaveLiveBtn').onclick = leaveStage;
 
   document.getElementById('goLiveBtn').onclick = async () => {
@@ -493,6 +596,10 @@
     }
     const title = prompt('What\'s your live session called?');
     if (title === null) return;
+
+    const choice = await askMediaConsent();
+    if (!choice) return; // cancelled
+
     const { data: created, error } = await supabase.from('live_sessions').insert({
       host_id: me.id, title: title.trim() || 'Live with ' + me.display_name, is_paid: false, status: 'scheduled',
     }).select().single();
@@ -505,43 +612,24 @@
       await client.setClientRole('host');
       await client.join(appId, created.channel_name, token, uid);
 
-      // Mic and camera are requested independently so a missing/blocked
-      // device (common on desktops with no webcam or mic) doesn't kill the
-      // whole "go live" flow -- the host just goes live with whichever
-      // device is actually available. Viewers can keep joining and leaving
-      // throughout -- there's no need for the host to restart anything when
-      // someone new tunes in.
-      const deviceWarnings = [];
-      try {
-        localTracks.mic = await AgoraRTC.createMicrophoneAudioTrack();
-      } catch (e) {
-        console.error('mic track failed', e);
-        deviceWarnings.push(e?.code === 'DEVICE_NOT_FOUND' ? 'no microphone found' : 'microphone unavailable');
-      }
-      try {
-        localTracks.cam = await AgoraRTC.createCameraVideoTrack();
-      } catch (e) {
-        console.error('camera track failed', e);
-        deviceWarnings.push(e?.code === 'DEVICE_NOT_FOUND' ? 'no camera found' : 'camera unavailable');
-      }
-      if (!localTracks.mic && !localTracks.cam) {
-        throw new Error('No camera or microphone available on this device.');
-      }
+      const { mic, cam, warnings } = await acquireLocalTracks(choice === 'camera');
+      localTracks.mic = mic;
+      localTracks.cam = cam;
+
       if (localTracks.cam) {
         localTracks.cam.play('localVideo');
-        document.getElementById('localVideo').style.display = 'block';
+        await refreshCameraDeviceList();
       } else {
-        document.getElementById('localVideo').style.display = 'none';
+        document.getElementById('flipCamBtn').style.display = 'none';
       }
-      document.getElementById('remoteVideo').style.display = 'none';
+      setLocalVideoPresentation(!!localTracks.cam);
+
       const tracksToPublish = [localTracks.mic, localTracks.cam].filter(Boolean);
       await client.publish(tracksToPublish);
-      if (deviceWarnings.length) {
-        toast('Live with ' + (localTracks.mic ? '' : 'no mic, ') + (localTracks.cam ? '' : 'no camera, ') + 'check your device settings to add it.', 'error');
-      }
+      if (warnings.length) toast(warnings.join(' · ') + ' — going live with what\'s available.', 'error');
 
       await supabase.from('live_sessions').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', created.id);
-      await supabase.rpc('heartbeat_live_session', { p_session_id: created.id }).catch(e => console.error(e));
+      try { await supabase.rpc('heartbeat_live_session', { p_session_id: created.id }); } catch (e) { console.error(e); }
 
       currentSession = created;
       isHosting = true;

@@ -72,6 +72,7 @@
   #recordIndicator { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:var(--coral); color:#fff; padding:8px 18px; border-radius:999px; font-size:0.82rem; font-weight:700; display:none; z-index:60; }
   #recordIndicator.show { display:block; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.45;} }
+  #callAudioOnlyIndicator { position:absolute; inset:0; display:none; align-items:center; justify-content:center; font-size:1.8rem; background: var(--plum); z-index:1; }
 </style>
 </head>
 <body>
@@ -98,12 +99,15 @@
 
 <div id="callModal">
   <div id="callRemoteVideo">
-    <div id="callLocalVideo"></div>
+    <div id="callLocalVideo">
+      <div class="audio-only-indicator" id="callAudioOnlyIndicator">🎙️</div>
+    </div>
     <div class="call-status-bar" id="callStatusBar">Calling…</div>
   </div>
   <div class="call-controls">
     <button class="call-ctrl-btn" id="callMicBtn">🎤</button>
     <button class="call-ctrl-btn" id="callCamBtn">📷</button>
+    <button class="call-ctrl-btn" id="callFlipCamBtn" style="display:none;">🔄</button>
     <button class="call-ctrl-btn hangup" id="callHangupBtn">📵</button>
   </div>
 </div>
@@ -428,13 +432,36 @@
     await client.join(appId, call.channel_name, token, uid);
     try { localTracks.mic = await AgoraRTC.createMicrophoneAudioTrack(); } catch (e) { console.error(e); }
     if (withVideo) {
-      try { localTracks.cam = await AgoraRTC.createCameraVideoTrack(); localTracks.cam.play('callLocalVideo'); } catch (e) { console.error(e); }
+      try {
+        localTracks.cam = await AgoraRTC.createCameraVideoTrack();
+        localTracks.cam.play('callLocalVideo');
+        try {
+          const cams = await AgoraRTC.getCameras();
+          callCameraDevices = cams || [];
+        } catch (e) { callCameraDevices = []; }
+        document.getElementById('callFlipCamBtn').style.display = callCameraDevices.length > 1 ? 'inline-flex' : 'none';
+      } catch (e) {
+        console.error(e);
+        toast((e?.code === 'PERMISSION_DENIED' || e?.name === 'NotAllowedError') ? 'Camera permission was denied — continuing as audio-only.' : 'No camera found — continuing as audio-only.', 'error');
+      }
     }
+    document.getElementById('callAudioOnlyIndicator').style.display = localTracks.cam ? 'none' : 'flex';
     const tracks = [localTracks.mic, localTracks.cam].filter(Boolean);
     if (tracks.length) await client.publish(tracks);
-    document.getElementById('callStatusBar').textContent = withVideo ? '' : `Voice call with ${peer?.display_name || ''}`;
+    document.getElementById('callStatusBar').textContent = withVideo && localTracks.cam ? '' : `Voice call with ${peer?.display_name || ''}`;
     startCallQuota();
   }
+
+  let callCameraDevices = [], callCameraDeviceIndex = 0;
+  document.getElementById('callFlipCamBtn').onclick = async () => {
+    if (!localTracks.cam || callCameraDevices.length < 2) return;
+    callCameraDeviceIndex = (callCameraDeviceIndex + 1) % callCameraDevices.length;
+    try {
+      await localTracks.cam.setDevice(callCameraDevices[callCameraDeviceIndex].deviceId);
+    } catch (e) {
+      toast('Could not switch camera.', 'error');
+    }
+  };
 
   async function endCall() {
     localTracks.mic?.close(); localTracks.cam?.close();
@@ -449,6 +476,9 @@
     if (outgoingCallChannel) { supabase.removeChannel(outgoingCallChannel); outgoingCallChannel = null; }
     document.getElementById('callModal').classList.remove('open');
     document.getElementById('incomingCallBanner').classList.remove('open');
+    document.getElementById('callFlipCamBtn').style.display = 'none';
+    document.getElementById('callAudioOnlyIndicator').style.display = 'none';
+    callCameraDevices = []; callCameraDeviceIndex = 0;
   }
 
   let outgoingCallChannel = null;
