@@ -5,140 +5,508 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin — MeetNMingle</title>
 <link rel="stylesheet" href="css/tokens.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
-  .wide-wrap { padding-top: 24px; padding-bottom: 60px; }
-  .report-row { padding: 18px; margin-bottom: 12px; }
-  .report-top { display:flex; justify-content:space-between; align-items:flex-start; gap: 12px; flex-wrap: wrap; }
-  .report-parties { font-size: 0.92rem; }
-  .report-parties b { color: var(--cream); }
-  .report-meta { font-size: 0.76rem; color: var(--cream-dim); margin-top: 4px; }
-  .status-pill { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; }
-  .status-pending { background: rgba(243,165,59,0.18); color: var(--amber); }
-  .status-reviewed { background: rgba(200,200,210,0.18); color: #DADAE0; }
-  .status-actioned { background: rgba(232,67,95,0.18); color: var(--coral); }
-  .status-dismissed { background: rgba(31,169,138,0.18); color: var(--jade); }
-  .banned-tag { background: var(--coral); color: var(--cream); font-size: 0.68rem; font-weight: 800; padding: 3px 8px; border-radius: 999px; margin-left: 6px; }
-  .report-details { font-size: 0.86rem; color: var(--cream-dim); margin: 10px 0; }
-  .report-actions { display:flex; gap:8px; flex-wrap: wrap; margin-top: 10px; }
-  .report-actions button { padding: 7px 14px; border-radius: 999px; border: none; font-size: 0.78rem; font-weight: 700; }
-  .act-review { background: rgba(251,244,234,0.1); color: var(--cream); }
-  .act-dismiss { background: rgba(31,169,138,0.15); color: var(--jade); }
-  .act-ban { background: var(--coral); color: var(--cream); }
-  .act-unban { background: rgba(251,244,234,0.1); color: var(--cream-dim); }
-  .filter-tabs { display:flex; gap:8px; margin-bottom: 20px; flex-wrap: wrap; }
+  body { display: flex; min-height: 100vh; }
+  #sidebar {
+    width: 240px; flex-shrink: 0; background: var(--ink-soft); border-right: 1px solid rgba(251,244,234,0.08);
+    display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+  }
+  .admin-logo { padding: 22px 20px 16px; border-bottom: 1px solid rgba(251,244,234,0.08); }
+  .admin-logo .tag { font-size: 0.66rem; color: var(--cream-dim); margin-top: 4px; letter-spacing: 0.03em; }
+  .admin-badges { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 14px; }
+  .admin-badges span { background: rgba(251,244,234,0.06); border: 1px solid rgba(251,244,234,0.1); border-radius: 12px; padding: 8px; font-size: 0.68rem; color: var(--cream-dim); }
+  .admin-badges b { display: block; font-family: var(--font-display); font-size: 1.2rem; color: var(--cream); margin-top: 2px; }
+  .admin-nav { display: flex; flex-direction: column; gap: 4px; padding: 10px; flex: 1; }
+  .admin-nav button { padding: 11px 14px; border-radius: 12px; border: none; background: transparent; color: var(--cream-dim); text-align: left; font-weight: 700; font-size: 0.88rem; }
+  .admin-nav button:hover { background: rgba(251,244,234,0.06); color: var(--cream); }
+  .admin-nav button.active { background: var(--coral); color: var(--cream); }
+  .admin-footer { padding: 14px; border-top: 1px solid rgba(251,244,234,0.08); }
+  .admin-footer a { font-size: 0.82rem; color: var(--cream-dim); }
+
+  #adminMain { flex: 1; padding: 22px 26px 60px; max-width: 1200px; }
+  .admin-topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .admin-topbar h1 { font-family: var(--font-display); font-size: 1.6rem; margin: 0; flex: 1; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-card { padding: 16px; }
+  .stat-card .label { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cream-dim); margin-bottom: 6px; }
+  .stat-card .value { font-family: var(--font-display); font-size: 1.6rem; font-weight: 600; }
+
+  .chart-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; margin-bottom: 20px; }
+  .chart-card { padding: 18px; }
+  .chart-card canvas { max-height: 240px; }
+
+  .admin-section { display: none; }
+  .admin-section.active { display: block; }
+
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type=search] { flex: 1; min-width: 200px; background: var(--ink-soft); border: 1.5px solid rgba(251,244,234,0.12); border-radius: 10px; padding: 10px 14px; color: var(--cream); }
+  .toolbar select { background: var(--ink-soft); border: 1.5px solid rgba(251,244,234,0.12); border-radius: 10px; padding: 10px 14px; color: var(--cream); }
+
+  .table-wrap { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid rgba(251,244,234,0.08); }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(251,244,234,0.06); font-size: 0.85rem; }
+  th { background: var(--ink-soft); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cream-dim); position: sticky; top: 0; }
+  tbody tr:hover { background: rgba(251,244,234,0.03); }
+  tr.banned-row { opacity: 0.6; }
+
+  .tier-tag { padding: 3px 9px; border-radius: 999px; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; }
+  .tier-free { background: rgba(251,244,234,0.1); color: var(--cream-dim); }
+  .tier-silver { background: rgba(200,200,210,0.2); color: #DADAE0; }
+  .tier-gold { background: rgba(243,165,59,0.18); color: var(--amber); }
+  .tier-diamond { background: rgba(31,169,138,0.18); color: var(--jade); }
+  .banned-tag { background: var(--coral); color: var(--cream); padding: 3px 9px; border-radius: 999px; font-size: 0.65rem; font-weight: 800; margin-left: 6px; }
+
+  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mini-btn { padding: 6px 10px; border-radius: 8px; border: none; font-size: 0.72rem; font-weight: 700; background: rgba(251,244,234,0.08); color: var(--cream); }
+  .mini-btn.danger { background: rgba(232,67,95,0.18); color: var(--coral); }
+  .mini-btn.jade { background: rgba(31,169,138,0.18); color: var(--jade); }
+  .mini-btn.amber { background: rgba(243,165,59,0.18); color: var(--amber); }
+
+  .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 0.82rem; color: var(--cream-dim); }
+  .page-btns { display: flex; gap: 6px; }
+  .page-btn { padding: 6px 11px; border-radius: 8px; border: 1px solid rgba(251,244,234,0.15); background: transparent; color: var(--cream-dim); font-size: 0.8rem; }
+  .page-btn.active { background: var(--coral); color: var(--cream); border-color: var(--coral); }
+
+  .email-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .template-list { display: flex; flex-direction: column; gap: 8px; }
+  .template-item { padding: 12px 14px; border-radius: 10px; background: var(--ink-soft); cursor: pointer; border: 1px solid transparent; }
+  .template-item.selected { border-color: var(--coral); }
+  .template-item .t-label { font-weight: 700; font-size: 0.88rem; }
+  .template-item .t-desc { font-size: 0.76rem; color: var(--cream-dim); }
+
+  .audit-entry { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-bottom: 1px solid rgba(251,244,234,0.06); }
+  .audit-badge { padding: 4px 9px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+  .audit-ban_user { background: rgba(232,67,95,0.18); color: var(--coral); }
+  .audit-unban_user { background: rgba(31,169,138,0.18); color: var(--jade); }
+  .audit-grant_subscription { background: rgba(243,165,59,0.18); color: var(--amber); }
+  .audit-update_report_status { background: rgba(251,244,234,0.1); color: var(--cream-dim); }
+  .audit-send_email { background: rgba(59,130,246,0.18); color: #7CB3F5; }
+
+  .modal-backdrop { position: fixed; inset:0; background: rgba(0,0,0,0.6); z-index: 60; display:none; align-items:center; justify-content:center; padding: 20px; }
+  .modal-backdrop.open { display:flex; }
+  .modal { max-width: 400px; width: 100%; padding: 24px; }
+
+  @media (max-width: 900px) {
+    body { flex-direction: column; }
+    #sidebar { width: 100%; height: auto; position: relative; flex-direction: row; overflow-x: auto; }
+    .admin-badges, .admin-footer { display: none; }
+    .admin-nav { flex-direction: row; }
+    .chart-grid, .email-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<div class="wide-wrap">
-  <h1 class="display" style="font-size:1.7rem;">Moderation dashboard</h1>
-  <p style="color:var(--cream-dim); font-size:0.88rem; margin-top:-8px;">All fraud/safety reports across MeetNMingle.</p>
 
-  <div class="filter-tabs" id="filterTabs">
-    <button class="pill selected" data-status="all">All</button>
-    <button class="pill" data-status="pending">Pending</button>
-    <button class="pill" data-status="reviewed">Reviewed</button>
-    <button class="pill" data-status="actioned">Actioned</button>
-    <button class="pill" data-status="dismissed">Dismissed</button>
+<aside id="sidebar">
+  <div class="admin-logo">
+    <div class="logo" style="font-size:1.2rem;">meet<em>n</em>mingle</div>
+    <div class="tag">Admin · Built by Mikaju Software Solutions</div>
+  </div>
+  <div class="admin-badges">
+    <span>Total<b id="sbTotal">—</b></span>
+    <span>Premium<b id="sbPremium">—</b></span>
+    <span>Free<b id="sbFree">—</b></span>
+    <span>Banned<b id="sbBanned">—</b></span>
+  </div>
+  <div class="admin-nav" id="adminNav">
+    <button class="active" data-section="overview">📊 Overview</button>
+    <button data-section="users">👥 Users</button>
+    <button data-section="revenue">💰 Revenue</button>
+    <button data-section="email">✉️ Email Center</button>
+    <button data-section="audit">🔍 Audit Log</button>
+  </div>
+  <div class="admin-footer"><a href="profile.html">← Back to app</a></div>
+</aside>
+
+<main id="adminMain">
+  <div class="admin-topbar">
+    <h1 id="sectionTitle">Overview</h1>
+    <button class="btn btn-outline btn-sm" id="refreshBtn">↺ Refresh</button>
   </div>
 
-  <div id="reportsList"><div class="empty-state"><div class="spinner" style="margin:0 auto;"></div></div></div>
+  <!-- OVERVIEW -->
+  <section class="admin-section active" id="section-overview">
+    <div class="stat-grid">
+      <div class="card stat-card"><div class="label">Total users</div><div class="value" id="statTotal">—</div></div>
+      <div class="card stat-card"><div class="label">Premium users</div><div class="value" id="statPremium">—</div></div>
+      <div class="card stat-card"><div class="label">New (7d)</div><div class="value" id="statNew7">—</div></div>
+      <div class="card stat-card"><div class="label">Active (7d)</div><div class="value" id="statActive7">—</div></div>
+      <div class="card stat-card"><div class="label">Matches made</div><div class="value" id="statMatches">—</div></div>
+      <div class="card stat-card"><div class="label">Messages sent</div><div class="value" id="statMessages">—</div></div>
+      <div class="card stat-card"><div class="label">Pending reports</div><div class="value" id="statPendingReports" style="color:var(--amber);">—</div></div>
+      <div class="card stat-card"><div class="label">Total swipes</div><div class="value" id="statSwipes">—</div></div>
+    </div>
+    <div class="chart-grid">
+      <div class="card chart-card"><div class="label" style="color:var(--cream-dim); font-size:0.75rem; margin-bottom:10px;">Subscription tier breakdown</div><canvas id="tierChart"></canvas></div>
+      <div class="card chart-card"><div class="label" style="color:var(--cream-dim); font-size:0.75rem; margin-bottom:10px;">Free vs. premium</div><canvas id="convChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- USERS -->
+  <section class="admin-section" id="section-users">
+    <div class="toolbar">
+      <input type="search" id="userSearch" placeholder="Search by name or email…">
+      <select id="userFilter">
+        <option value="all">All users</option>
+        <option value="premium">Premium only</option>
+        <option value="free">Free only</option>
+        <option value="banned">Banned</option>
+        <option value="admin">Admins</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name / Email</th><th>Plan</th><th>Rating</th><th>Reports</th><th>Joined</th><th>Actions</th></tr></thead>
+        <tbody id="usersTableBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <span id="pageInfo">—</span>
+      <div class="page-btns" id="pageBtns"></div>
+    </div>
+  </section>
+
+  <!-- REVENUE -->
+  <section class="admin-section" id="section-revenue">
+    <div class="stat-grid">
+      <div class="card stat-card"><div class="label">Current MRR</div><div class="value" id="revMrr">—</div></div>
+      <div class="card stat-card"><div class="label">Active subscriptions</div><div class="value" id="revActive">—</div></div>
+      <div class="card stat-card"><div class="label">Pending payments</div><div class="value" id="revPending">—</div></div>
+      <div class="card stat-card"><div class="label">Live-session tips</div><div class="value" id="revTips">—</div></div>
+    </div>
+    <div class="card chart-card"><div class="label" style="color:var(--cream-dim); font-size:0.75rem; margin-bottom:10px;">Revenue by tier</div><canvas id="revenueChart"></canvas></div>
+    <p style="color:var(--cream-dim); font-size:0.82rem; margin-top:14px;">Figures reflect subscriptions granted via M-Pesa/Paystack once live, plus any manual grants made from the Users tab.</p>
+  </section>
+
+  <!-- EMAIL CENTER -->
+  <section class="admin-section" id="section-email">
+    <div class="email-grid">
+      <div>
+        <div class="template-list" id="templateList"></div>
+      </div>
+      <div class="card" style="padding:20px;">
+        <div class="field"><label>Segment</label>
+          <select id="emailSegment">
+            <option value="all">All users</option>
+            <option value="premium">Premium users</option>
+            <option value="free">Free users</option>
+          </select>
+        </div>
+        <div class="field"><label>Subject</label><input type="text" id="emailSubject"></div>
+        <div class="field"><label>Body (HTML, supports {{name}})</label><textarea id="emailBody" rows="8"></textarea></div>
+        <div id="emailError" class="field-error" style="margin-bottom:10px;"></div>
+        <button class="btn btn-primary btn-block" id="sendEmailBtn">Send to segment</button>
+      </div>
+    </div>
+    <h3 class="display" style="font-size:1.1rem; margin-top:28px;">Recent sends</h3>
+    <div class="table-wrap" style="margin-top:10px;">
+      <table>
+        <thead><tr><th>Subject</th><th>Segment</th><th>Sent by</th><th>Recipients</th><th>When</th></tr></thead>
+        <tbody id="emailLogBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- AUDIT LOG -->
+  <section class="admin-section" id="section-audit">
+    <div class="card" style="padding:6px 4px;" id="auditList"></div>
+  </section>
+</main>
+
+<div class="modal-backdrop" id="grantModal">
+  <div class="card modal">
+    <h3 class="display" style="margin-top:0;">Grant subscription</h3>
+    <p style="color:var(--cream-dim); font-size:0.85rem;" id="grantUserLabel"></p>
+    <div class="field"><label>Tier</label>
+      <select id="grantTier"><option value="silver">Silver</option><option value="gold">Gold</option><option value="diamond">Diamond</option><option value="free">Free (remove premium)</option></select>
+    </div>
+    <div class="field"><label>Duration (days)</label><input type="number" id="grantDays" value="30" min="1"></div>
+    <div class="field"><label>Note (optional)</label><input type="text" id="grantNote"></div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-outline btn-block" id="grantCancelBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="grantConfirmBtn">Grant</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  import { supabase, requireAuth, requireProfile, timeAgo } from './js/supabaseClient.js';
+  import { supabase, requireAuth, requireProfile, timeAgo, SUPABASE_URL, SUPABASE_ANON_KEY } from './js/supabaseClient.js';
 
   function toast(msg, type='') {
     const t = document.getElementById('toast');
     t.textContent = msg; t.className = 'toast show ' + type;
-    setTimeout(() => t.classList.remove('show'), 3200);
+    setTimeout(() => t.classList.remove('show'), 3500);
   }
+  function fmtKES(n) { return 'KES ' + Number(n||0).toLocaleString(); }
 
-  let allReports = [];
-  let currentFilter = 'all';
+  let me, session;
+  let userState = { search: '', filter: 'all', page: 1, pageSize: 15, total: 0 };
+  let grantTargetId = null, grantTargetName = '';
+  let charts = {};
 
-  function renderList() {
-    const listEl = document.getElementById('reportsList');
-    const filtered = currentFilter === 'all' ? allReports : allReports.filter(r => r.status === currentFilter);
-    if (filtered.length === 0) {
-      listEl.innerHTML = `<div class="empty-state"><p>No reports here.</p></div>`;
-      return;
-    }
-    listEl.innerHTML = '';
-    filtered.forEach(r => {
-      const row = document.createElement('div');
-      row.className = 'card report-row';
-      row.innerHTML = `
-        <div class="report-top">
-          <div class="report-parties">
-            <b>${r.reporter_name}</b> reported <b>${r.reported_name}</b>
-            ${r.reported_is_banned ? '<span class="banned-tag">BANNED</span>' : ''}
-            <div class="report-meta">
-              ${timeAgo(r.created_at)} · reason: <strong>${r.reason}</strong> ·
-              ${r.reported_total_reports} total report(s) on this user ·
-              rating ${r.reported_avg_rating ?? '—'}
-            </div>
-          </div>
-          <span class="status-pill status-${r.status}">${r.status}</span>
-        </div>
-        ${r.details ? `<div class="report-details">"${r.details}"</div>` : ''}
-        <div class="report-actions">
-          ${r.status === 'pending' ? '<button class="act-review" data-act="reviewed">Mark reviewed</button>' : ''}
-          ${r.status !== 'dismissed' ? '<button class="act-dismiss" data-act="dismissed">Dismiss</button>' : ''}
-          ${!r.reported_is_banned ? '<button class="act-ban" data-act="ban">Ban user</button>' : '<button class="act-unban" data-act="unban">Unban user</button>'}
-        </div>
-      `;
-      row.querySelectorAll('button[data-act]').forEach(btn => {
-        btn.onclick = () => handleAction(r, btn.dataset.act);
-      });
-      listEl.appendChild(row);
+  // ---- nav ----
+  document.getElementById('adminNav').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-section]');
+    if (!btn) return;
+    document.querySelectorAll('.admin-nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+    const id = btn.dataset.section;
+    document.getElementById('section-' + id).classList.add('active');
+    const titles = { overview: 'Overview', users: 'Users', revenue: 'Revenue', email: 'Email Center', audit: 'Audit Log' };
+    document.getElementById('sectionTitle').textContent = titles[id];
+    if (id === 'users') loadUsers();
+    if (id === 'revenue') loadRevenue();
+    if (id === 'email') loadEmailLog();
+    if (id === 'audit') loadAudit();
+  });
+
+  document.getElementById('refreshBtn').onclick = () => loadOverview();
+
+  // ---- OVERVIEW ----
+  async function loadOverview() {
+    const { data, error } = await supabase.rpc('admin_overview_stats');
+    if (error) { toast(error.message, 'error'); return; }
+    document.getElementById('statTotal').textContent = data.total_users;
+    document.getElementById('statPremium').textContent = data.silver_users + data.gold_users + data.diamond_users;
+    document.getElementById('statNew7').textContent = data.new_users_7d;
+    document.getElementById('statActive7').textContent = data.active_7d;
+    document.getElementById('statMatches').textContent = data.total_matches;
+    document.getElementById('statMessages').textContent = data.total_messages;
+    document.getElementById('statPendingReports').textContent = data.pending_reports;
+    document.getElementById('statSwipes').textContent = data.total_swipes;
+    document.getElementById('sbTotal').textContent = data.total_users;
+    document.getElementById('sbPremium').textContent = data.silver_users + data.gold_users + data.diamond_users;
+    document.getElementById('sbFree').textContent = data.free_users;
+    document.getElementById('sbBanned').textContent = data.banned_users;
+
+    charts.tier?.destroy();
+    charts.tier = new Chart(document.getElementById('tierChart'), {
+      type: 'bar',
+      data: {
+        labels: ['Free','Silver','Gold','Diamond'],
+        datasets: [{ data: [data.free_users, data.silver_users, data.gold_users, data.diamond_users],
+          backgroundColor: ['rgba(251,244,234,0.25)','rgba(200,200,210,0.5)','rgba(243,165,59,0.7)','rgba(31,169,138,0.7)'],
+          borderRadius: 6 }]
+      },
+      options: { responsive:true, animation:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#E9DFD2'}}, y:{ticks:{color:'#E9DFD2'}} } }
+    });
+
+    charts.conv?.destroy();
+    const premiumTotal = data.silver_users + data.gold_users + data.diamond_users;
+    charts.conv = new Chart(document.getElementById('convChart'), {
+      type: 'doughnut',
+      data: { labels: ['Free', 'Premium'], datasets: [{ data: [data.free_users, premiumTotal], backgroundColor: ['rgba(251,244,234,0.2)', '#E8435F'] }] },
+      options: { responsive:true, animation:false, plugins:{legend:{labels:{color:'#E9DFD2'}}} }
     });
   }
 
-  async function handleAction(report, act) {
-    if (act === 'reviewed' || act === 'dismissed') {
-      const { error } = await supabase.rpc('admin_update_report_status', { p_report_id: report.id, p_status: act });
-      if (error) { toast(error.message, 'error'); return; }
-      report.status = act;
-    } else if (act === 'ban') {
-      const reason = prompt(`Ban ${report.reported_name}? Enter a reason:`);
-      if (reason === null) return;
-      const { error } = await supabase.rpc('admin_ban_user', { p_user_id: report.reported_id, p_reason: reason || 'Policy violation' });
-      if (error) { toast(error.message, 'error'); return; }
-      allReports.forEach(r => { if (r.reported_id === report.reported_id) { r.reported_is_banned = true; r.status = 'actioned'; } });
-      toast(`${report.reported_name} banned.`, 'success');
-    } else if (act === 'unban') {
-      const { error } = await supabase.rpc('admin_unban_user', { p_user_id: report.reported_id });
-      if (error) { toast(error.message, 'error'); return; }
-      allReports.forEach(r => { if (r.reported_id === report.reported_id) r.reported_is_banned = false; });
-      toast(`${report.reported_name} unbanned.`, 'success');
-    }
-    renderList();
+  // ---- USERS ----
+  async function loadUsers() {
+    const { data, error } = await supabase.rpc('admin_list_users', {
+      p_search: userState.search, p_filter: userState.filter, p_page: userState.page, p_page_size: userState.pageSize,
+    });
+    if (error) { toast(error.message, 'error'); return; }
+    userState.total = data?.[0]?.total_count || 0;
+    const tbody = document.getElementById('usersTableBody');
+    tbody.innerHTML = '';
+    (data || []).forEach(u => {
+      const tr = document.createElement('tr');
+      if (u.is_banned) tr.className = 'banned-row';
+      tr.innerHTML = `
+        <td><strong>${u.display_name}</strong>${u.is_admin ? ' 🛡️' : ''}<br><span style="color:var(--cream-dim); font-size:0.78rem;">${u.email}</span></td>
+        <td><span class="tier-tag tier-${u.subscription_tier}">${u.subscription_tier}</span>${u.is_banned ? '<span class="banned-tag">Banned</span>' : ''}</td>
+        <td>${u.ratings_count > 0 ? '★ ' + u.average_rating : '—'}</td>
+        <td>${u.reports_against_count}</td>
+        <td>${timeAgo(u.created_at)}</td>
+        <td><div class="row-actions">
+          <button class="mini-btn amber" data-act="grant" data-id="${u.id}" data-name="${u.display_name}">Grant plan</button>
+          ${u.is_banned
+            ? `<button class="mini-btn jade" data-act="unban" data-id="${u.id}" data-name="${u.display_name}">Unban</button>`
+            : `<button class="mini-btn danger" data-act="ban" data-id="${u.id}" data-name="${u.display_name}">Ban</button>`}
+        </div></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('button[data-act]').forEach(btn => {
+      btn.onclick = () => handleUserAction(btn.dataset.act, btn.dataset.id, btn.dataset.name);
+    });
+    renderPagination();
   }
 
-  document.getElementById('filterTabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-status]');
-    if (!btn) return;
-    document.querySelectorAll('#filterTabs .pill').forEach(p => p.classList.remove('selected'));
-    btn.classList.add('selected');
-    currentFilter = btn.dataset.status;
-    renderList();
+  function renderPagination() {
+    const pages = Math.max(1, Math.ceil(userState.total / userState.pageSize));
+    document.getElementById('pageInfo').textContent = `Page ${userState.page} of ${pages} · ${userState.total} users`;
+    const btnsEl = document.getElementById('pageBtns');
+    btnsEl.innerHTML = '';
+    for (let i = 1; i <= Math.min(pages, 8); i++) {
+      const b = document.createElement('button');
+      b.className = 'page-btn' + (i === userState.page ? ' active' : '');
+      b.textContent = i;
+      b.onclick = () => { userState.page = i; loadUsers(); };
+      btnsEl.appendChild(b);
+    }
+  }
+
+  async function handleUserAction(act, id, name) {
+    if (act === 'ban') {
+      const reason = prompt(`Ban ${name}? Enter a reason:`);
+      if (reason === null) return;
+      const { error } = await supabase.rpc('admin_ban_user', { p_user_id: id, p_reason: reason || 'Policy violation' });
+      if (error) { toast(error.message, 'error'); return; }
+      toast(`${name} banned.`, 'success');
+      loadUsers();
+    } else if (act === 'unban') {
+      const { error } = await supabase.rpc('admin_unban_user', { p_user_id: id });
+      if (error) { toast(error.message, 'error'); return; }
+      toast(`${name} unbanned.`, 'success');
+      loadUsers();
+    } else if (act === 'grant') {
+      grantTargetId = id; grantTargetName = name;
+      document.getElementById('grantUserLabel').textContent = `Granting a plan to ${name}`;
+      document.getElementById('grantModal').classList.add('open');
+    }
+  }
+
+  let searchTimer;
+  document.getElementById('userSearch').addEventListener('input', (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { userState.search = e.target.value.trim(); userState.page = 1; loadUsers(); }, 350);
+  });
+  document.getElementById('userFilter').addEventListener('change', (e) => {
+    userState.filter = e.target.value; userState.page = 1; loadUsers();
   });
 
+  document.getElementById('grantCancelBtn').onclick = () => document.getElementById('grantModal').classList.remove('open');
+  document.getElementById('grantConfirmBtn').onclick = async () => {
+    const tier = document.getElementById('grantTier').value;
+    const days = parseInt(document.getElementById('grantDays').value) || 30;
+    const note = document.getElementById('grantNote').value.trim() || null;
+    const { error } = await supabase.rpc('admin_grant_subscription', { p_user_id: grantTargetId, p_tier: tier, p_days: days, p_note: note });
+    document.getElementById('grantModal').classList.remove('open');
+    if (error) { toast(error.message, 'error'); return; }
+    toast(`Granted ${tier} to ${grantTargetName}.`, 'success');
+    loadUsers();
+  };
+
+  // ---- REVENUE ----
+  async function loadRevenue() {
+    const { data, error } = await supabase.rpc('admin_revenue_stats');
+    if (error) { toast(error.message, 'error'); return; }
+    document.getElementById('revMrr').textContent = fmtKES(data.current_mrr);
+    document.getElementById('revActive').textContent = data.active_subscriptions;
+    document.getElementById('revPending').textContent = data.pending_payments;
+    document.getElementById('revTips').textContent = fmtKES(data.live_session_tips_total);
+
+    const tiers = data.by_tier || {};
+    const labels = Object.keys(tiers);
+    const values = labels.map(t => tiers[t].count * tiers[t].price_kes);
+    charts.revenue?.destroy();
+    charts.revenue = new Chart(document.getElementById('revenueChart'), {
+      type: 'bar',
+      data: { labels: labels.length ? labels : ['No active subscriptions yet'], datasets: [{ data: values.length ? values : [0], backgroundColor: '#F3A53B', borderRadius: 6 }] },
+      options: { responsive:true, animation:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#E9DFD2'}}, y:{ticks:{color:'#E9DFD2', callback: v => 'KES ' + v}} } }
+    });
+  }
+
+  // ---- EMAIL CENTER ----
+  const TEMPLATES = {
+    welcome: { label: '👋 Welcome', desc: 'New user onboarding', subject: 'Karibu to MeetNMingle 🎉', body: '<p>Hello {{name}},</p><p>Welcome to MeetNMingle — Kenya\'s free dating platform. Complete your profile and start discovering matches by interest.</p>' },
+    upgrade_nudge: { label: '⭐ Upgrade nudge', desc: 'Free user premium upsell', subject: 'See who already liked you on MeetNMingle', body: '<p>Hello {{name}},</p><p>People have been liking your profile — upgrade to Silver to see exactly who, plus share photos in chat.</p>' },
+    safety_reminder: { label: '🛡️ Safety reminder', desc: 'Periodic safety tips', subject: 'A quick safety reminder from MeetNMingle', body: '<p>Hello {{name}},</p><p>Always meet new matches in public places, and use our report/block tools if anything feels off.</p>' },
+    custom: { label: '✏️ Custom', desc: 'Compose from scratch', subject: '', body: '<p>Hello {{name}},</p><p>Write your message here…</p>' },
+  };
+  let selectedTemplate = 'welcome';
+
+  function renderTemplates() {
+    const listEl = document.getElementById('templateList');
+    listEl.innerHTML = '';
+    Object.entries(TEMPLATES).forEach(([key, t]) => {
+      const el = document.createElement('div');
+      el.className = 'template-item' + (key === selectedTemplate ? ' selected' : '');
+      el.innerHTML = `<div class="t-label">${t.label}</div><div class="t-desc">${t.desc}</div>`;
+      el.onclick = () => {
+        selectedTemplate = key;
+        document.getElementById('emailSubject').value = t.subject;
+        document.getElementById('emailBody').value = t.body;
+        renderTemplates();
+      };
+      listEl.appendChild(el);
+    });
+  }
+  renderTemplates();
+  document.getElementById('emailSubject').value = TEMPLATES.welcome.subject;
+  document.getElementById('emailBody').value = TEMPLATES.welcome.body;
+
+  document.getElementById('sendEmailBtn').onclick = async () => {
+    const errEl = document.getElementById('emailError');
+    errEl.textContent = '';
+    const subject = document.getElementById('emailSubject').value.trim();
+    const body = document.getElementById('emailBody').value.trim();
+    const segment = document.getElementById('emailSegment').value;
+    if (!subject || !body) { errEl.textContent = 'Subject and body are required.'; return; }
+    if (!confirm(`Send "${subject}" to the ${segment} segment?`)) return;
+
+    const btn = document.getElementById('sendEmailBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-admin-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ template: selectedTemplate, subject, body, segment }),
+      });
+      const json = await res.json();
+      btn.disabled = false; btn.textContent = 'Send to segment';
+      if (!res.ok) { errEl.textContent = json.error || 'Send failed.'; return; }
+      toast(`Sent to ${json.sent} recipient(s).`, 'success');
+      loadEmailLog();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Send to segment';
+      errEl.textContent = 'Network error — please try again.';
+    }
+  };
+
+  async function loadEmailLog() {
+    const { data, error } = await supabase.rpc('admin_list_email_log', { p_limit: 30 });
+    const tbody = document.getElementById('emailLogBody');
+    if (error) { tbody.innerHTML = `<tr><td colspan="5">Could not load.</td></tr>`; return; }
+    tbody.innerHTML = (data || []).map(e => `
+      <tr><td>${e.subject}</td><td>${e.segment}</td><td>${e.admin_name || '—'}</td><td>${e.recipient_count}</td><td>${timeAgo(e.created_at)}</td></tr>
+    `).join('') || `<tr><td colspan="5" style="color:var(--cream-dim);">No emails sent yet.</td></tr>`;
+  }
+
+  // ---- AUDIT LOG ----
+  async function loadAudit() {
+    const { data, error } = await supabase.rpc('admin_list_audit_log', { p_limit: 100 });
+    const listEl = document.getElementById('auditList');
+    if (error) { listEl.innerHTML = `<p style="padding:16px;">Could not load audit log.</p>`; return; }
+    if (!data || data.length === 0) { listEl.innerHTML = `<p style="padding:16px; color:var(--cream-dim);">No admin actions yet.</p>`; return; }
+    listEl.innerHTML = data.map(a => `
+      <div class="audit-entry">
+        <span class="audit-badge audit-${a.action}">${a.action.replace(/_/g, ' ')}</span>
+        <div style="flex:1;">
+          <div style="font-size:0.86rem;"><strong>${a.admin_name || 'Admin'}</strong> ${a.target_name ? '→ ' + a.target_name : ''}</div>
+          <div style="font-size:0.76rem; color:var(--cream-dim); margin-top:2px;">${JSON.stringify(a.details)}</div>
+        </div>
+        <div style="font-size:0.74rem; color:var(--cream-dim); white-space:nowrap;">${timeAgo(a.created_at)}</div>
+      </div>
+    `).join('');
+  }
+
   (async () => {
-    const session = await requireAuth();
+    session = await requireAuth();
     if (!session) return;
-    const me = await requireProfile(session);
+    me = await requireProfile(session);
     if (!me) return;
     if (!me.is_admin) {
       document.body.innerHTML = `<div class="page-wrap"><div class="empty-state"><p>You don't have access to this page.</p><a href="discover.html" class="btn btn-primary">Back to Discover</a></div></div>`;
       return;
     }
-    const { data, error } = await supabase.rpc('admin_list_reports');
-    if (error) { toast(error.message, 'error'); return; }
-    allReports = data || [];
-    renderList();
+    await loadOverview();
   })();
 </script>
 </body>

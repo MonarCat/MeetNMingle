@@ -39,14 +39,25 @@ accountability built in from day one.
   averaged onto each profile (`profile.html`, trigger-maintained aggregates).
 - **Safety** — report fraud/scam/harassment/etc. profiles, and block users,
   both from the Discover card menu.
-- **Moderation dashboard** (`admin.html`) — visible only to accounts with
-  `profiles.is_admin = true`. Lists every report with reporter/reported
-  names, the reported user's rating and total report count, lets a moderator
-  mark reports reviewed/dismissed, and ban/unban the reported user — all via
-  `SECURITY DEFINER` RPCs (`admin_list_reports`, `admin_update_report_status`,
-  `admin_ban_user`, `admin_unban_user`) so no broad RLS bypass is needed.
-  Currently granted to `mwombe007@gmail.com`. To add another admin:
-  `update public.profiles set is_admin = true where id = '<user-id>';`
+- **Moderation & admin dashboard** (`admin.html`) — visible only to accounts
+  with `profiles.is_admin = true` (currently `mwombe007@gmail.com`). Five
+  sections, all backed by `SECURITY DEFINER` RPCs (no broad RLS bypass):
+  - **Overview** — user/tier counts, 7-day growth & activity, matches,
+    messages, swipes, pending reports, with Chart.js breakdowns.
+  - **Users** — searchable, filterable (all/premium/free/banned/admin),
+    paginated table. Ban/unban, and **manually grant a subscription tier**
+    (bridges the gap until Paystack/M-Pesa are live).
+  - **Revenue** — current MRR, active/pending subscriptions, live-session
+    tips, revenue-by-tier chart.
+  - **Email Center** — template picker (welcome, upgrade nudge, safety
+    reminder, custom) with `{{name}}` merge, sends to a segment (all/premium/
+    free) via a Brevo-backed edge function (`send-admin-email`), logs every
+    send to `email_log`.
+  - **Audit Log** — every ban/unban, report status change, subscription
+    grant, and email send, with who/what/when (`audit_log` table, populated
+    automatically by the RPCs above).
+  To add another admin: `update public.profiles set is_admin = true where id
+  = '<user-id>';`
 - **Subscriptions** (`pricing.html`) — Silver (KES 199), Gold (KES 299),
   Diamond (KES 399) tiers, paid via **M-Pesa STK Push** through two Supabase
   Edge Functions (`mpesa-stkpush`, `mpesa-callback`). Photo sharing in chat is
@@ -73,6 +84,10 @@ accountability built in from day one.
    of `index.html` (and any other pages you want ads on).
 5. **Email templates** — Supabase's default confirmation/reset emails are
    plain. Customize them under Auth → Email Templates in the dashboard.
+   Separately, the admin Email Center needs its own secrets before it can
+   actually send: `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and optionally
+   `BREVO_SENDER_NAME` (get a key from [Brevo](https://www.brevo.com)).
+   Until set, it responds with a clear "not configured" error.
 6. **Content moderation on uploads** — nothing currently screens photos
    before they hit storage; worth adding before wide public launch.
 
