@@ -24,7 +24,7 @@ export function renderTabbar(active) {
       .unread-badge {
         position: absolute; top: 2px; right: 18%;
         min-width: 16px; height: 16px; padding: 0 4px;
-        border-radius: 999px; background: var(--coral, #E85D4C);
+        border-radius: 999px; background: var(--coral, #FF6F91);
         color: #fff; font-size: 0.62rem; font-weight: 800;
         display: flex; align-items: center; justify-content: center;
         line-height: 1;

@@ -1,23 +1,27 @@
 /* ==========================================================================
    MeetNMingle design tokens
-   Palette: dusk-over-Nairobi warmth — deep plum-charcoal base, hibiscus coral
-   for connection/action, sunset amber for ratings/premium, jade for trust
-   & safety. Display face Fraunces (warm, literary) for a few words at a
-   time; Plus Jakarta Sans carries everything else.
+   Palette: golden-hour blush — soft ivory base, rosy coral for connection/
+   action, warm gold for ratings/premium, sage for trust & safety. Bright,
+   airy and romantic; nothing near-black. Display face Fraunces (warm,
+   literary) for a few words at a time; Plus Jakarta Sans carries the rest.
+
+   Note: token NAMES are kept stable for compatibility with all pages
+   (--ink/--ink-soft = surfaces, --cream/--cream-dim = text), but the
+   VALUES have been inverted from dark-on-light to a bright, light theme.
    ========================================================================== */
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,600&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&display=swap');
 
 :root {
-  --ink: #17121F;
-  --ink-soft: #241B2E;
-  --plum: #3A2140;
-  --cream: #FBF4EA;
-  --cream-dim: #E9DFD2;
-  --coral: #E8435F;
-  --coral-dim: #C93350;
-  --amber: #F3A53B;
-  --jade: #1FA98A;
-  --jade-dim: #17836D;
+  --ink: #FDF1EC;        /* page background — soft blush ivory */
+  --ink-soft: #FFFFFF;   /* card / surface background — clean white */
+  --plum: #E8A9B6;       /* dusty rose accent, used for photo/avatar placeholders */
+  --cream: #4A2438;      /* primary text — warm deep wine (not black) */
+  --cream-dim: #8C6B78;  /* secondary text — soft mauve grey */
+  --coral: #FF6F91;      /* primary action / romance accent */
+  --coral-dim: #E8577A;
+  --amber: #FFB648;      /* ratings / premium gold */
+  --jade: #4FB88E;       /* trust & safety — relaxing sage green */
+  --jade-dim: #3D9773;
 
   --font-display: 'Fraunces', ui-serif, Georgia, serif;
   --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -25,8 +29,8 @@
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 28px;
-  --shadow-card: 0 10px 30px -12px rgba(23, 18, 31, 0.45);
-  --route-dot: #F3A53B;
+  --shadow-card: 0 10px 30px -12px rgba(74, 36, 56, 0.16);
+  --route-dot: #FFB648;
 }
 
 * { box-sizing: border-box; }
@@ -73,11 +77,11 @@ input, select, textarea { font-family: inherit; }
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 .btn:active { transform: scale(0.97); }
-.btn-primary { background: var(--coral); color: var(--cream); box-shadow: 0 8px 24px -8px rgba(232,67,95,0.6); }
+.btn-primary { background: var(--coral); color: var(--cream); box-shadow: 0 8px 24px -8px rgba(255,111,145,0.6); }
 .btn-primary:hover { background: var(--coral-dim); }
-.btn-outline { background: transparent; color: var(--cream); border: 1.5px solid rgba(251,244,234,0.35); }
+.btn-outline { background: transparent; color: var(--cream); border: 1.5px solid rgba(74,36,56,0.35); }
 .btn-outline:hover { border-color: var(--cream); }
-.btn-jade { background: var(--jade); color: var(--ink); }
+.btn-jade { background: var(--jade); color: var(--cream); }
 .btn-jade:hover { background: var(--jade-dim); color: var(--cream); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-block { width: 100%; }
@@ -86,7 +90,7 @@ input, select, textarea { font-family: inherit; }
 .card {
   background: var(--ink-soft);
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(251,244,234,0.06);
+  border: 1px solid rgba(74,36,56,0.06);
   box-shadow: var(--shadow-card);
 }
 
@@ -94,7 +98,7 @@ input, select, textarea { font-family: inherit; }
 .field label { font-size: 0.82rem; font-weight: 600; color: var(--cream-dim); }
 .field input, .field select, .field textarea {
   background: var(--ink);
-  border: 1.5px solid rgba(251,244,234,0.12);
+  border: 1.5px solid rgba(74,36,56,0.12);
   border-radius: var(--radius-sm);
   padding: 12px 14px;
   color: var(--cream);
@@ -111,14 +115,14 @@ input, select, textarea { font-family: inherit; }
   align-items: center;
   padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(251,244,234,0.08);
+  background: rgba(74,36,56,0.08);
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--cream-dim);
   border: 1px solid transparent;
   transition: all 0.15s ease;
 }
-.pill.selected { background: rgba(232,67,95,0.18); color: var(--coral); border-color: var(--coral); }
+.pill.selected { background: rgba(255,111,145,0.18); color: var(--coral); border-color: var(--coral); }
 
 .stars { color: var(--amber); letter-spacing: 2px; }
 
@@ -126,9 +130,9 @@ input, select, textarea { font-family: inherit; }
   position: sticky; top: 0; z-index: 40;
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 6vw;
-  background: rgba(23,18,31,0.85);
+  background: rgba(253,241,236,0.85);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(251,244,234,0.08);
+  border-bottom: 1px solid rgba(74,36,56,0.08);
 }
 .logo { font-family: var(--font-display); font-weight: 600; font-size: 1.3rem; }
 .logo em { color: var(--coral); font-style: italic; }
@@ -137,7 +141,7 @@ input, select, textarea { font-family: inherit; }
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
   display: flex; justify-content: space-around;
   background: var(--ink-soft);
-  border-top: 1px solid rgba(251,244,234,0.08);
+  border-top: 1px solid rgba(74,36,56,0.08);
   padding: 10px 0 max(10px, env(safe-area-inset-bottom));
 }
 .tabbar a { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 0.68rem; color: var(--cream-dim); font-weight: 600; }
@@ -149,7 +153,7 @@ input, select, textarea { font-family: inherit; }
 
 .toast {
   position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
-  background: var(--ink-soft); border: 1px solid rgba(251,244,234,0.15);
+  background: var(--ink-soft); border: 1px solid rgba(74,36,56,0.15);
   padding: 12px 20px; border-radius: 999px; font-size: 0.85rem; font-weight: 600;
   z-index: 100; box-shadow: var(--shadow-card);
   opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease;
@@ -160,7 +164,7 @@ input, select, textarea { font-family: inherit; }
 
 .spinner {
   width: 20px; height: 20px; border-radius: 50%;
-  border: 3px solid rgba(251,244,234,0.2); border-top-color: var(--coral);
+  border: 3px solid rgba(74,36,56,0.2); border-top-color: var(--coral);
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }

@@ -8,7 +8,7 @@
 <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.20.0.js"></script>
 <style>
   body { padding-bottom: 0; }
-  .chat-header { display:flex; align-items:center; gap:12px; padding: 14px 18px; background: var(--ink-soft); border-bottom: 1px solid rgba(251,244,234,0.08); position: sticky; top:0; z-index: 20; }
+  .chat-header { display:flex; align-items:center; gap:12px; padding: 14px 18px; background: var(--ink-soft); border-bottom: 1px solid rgba(74,36,56,0.08); position: sticky; top:0; z-index: 20; }
   .chat-header .avatar { width:40px; height:40px; border-radius:50%; background: var(--plum); background-size:cover; background-position:center; }
   .chat-header .name { font-weight:700; }
   .chat-header .back { font-size: 1.3rem; margin-right: 4px; }
@@ -23,8 +23,8 @@
   .media-bubble { padding: 0; overflow: hidden; border-radius: 16px; max-width: 220px; }
   .media-bubble img { width: 100%; display:block; }
   .view-once-btn { display:flex; flex-direction:column; align-items:center; gap:8px; padding: 24px; background: var(--ink); border-radius:16px; min-width:160px; }
-  .composer { display:flex; align-items:center; gap:10px; padding: 12px 16px; background: var(--ink-soft); border-top: 1px solid rgba(251,244,234,0.08); }
-  .composer input[type=text] { flex:1; background: var(--ink); border: 1.5px solid rgba(251,244,234,0.12); border-radius: 999px; padding: 12px 16px; color: var(--cream); font-size: 0.9rem; }
+  .composer { display:flex; align-items:center; gap:10px; padding: 12px 16px; background: var(--ink-soft); border-top: 1px solid rgba(74,36,56,0.08); }
+  .composer input[type=text] { flex:1; background: var(--ink); border: 1.5px solid rgba(74,36,56,0.12); border-radius: 999px; padding: 12px 16px; color: var(--cream); font-size: 0.9rem; }
   .icon-btn { width: 42px; height:42px; border-radius:50%; background: var(--ink); border: none; color: var(--cream-dim); font-size: 1.1rem; flex-shrink:0; }
   .send-btn { background: var(--coral); color: var(--cream); }
 
@@ -36,10 +36,10 @@
   .share-sheet-backdrop.open { display:flex; }
   .share-sheet { background: var(--ink-soft); width:100%; max-width: 480px; border-radius: 24px 24px 0 0; padding: 22px; }
   .share-sheet h3 { margin-top:0; font-family: var(--font-display); }
-  .toggle-row { display:flex; align-items:center; justify-content:space-between; padding: 12px 0; border-bottom: 1px solid rgba(251,244,234,0.08); }
+  .toggle-row { display:flex; align-items:center; justify-content:space-between; padding: 12px 0; border-bottom: 1px solid rgba(74,36,56,0.08); }
   .toggle-row div div:first-child { font-weight:600; font-size:0.9rem; }
   .toggle-row div div:last-child { font-size:0.76rem; color:var(--cream-dim); }
-  .switch { position:relative; width:44px; height:26px; background: rgba(251,244,234,0.15); border-radius:999px; border:none; }
+  .switch { position:relative; width:44px; height:26px; background: rgba(74,36,56,0.15); border-radius:999px; border:none; }
   .switch.on { background: var(--coral); }
   .switch::after { content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition: transform 0.15s ease; }
   .switch.on::after { transform: translateX(18px); }
@@ -49,10 +49,10 @@
   #callModal { position: fixed; inset:0; background: var(--ink); z-index: 90; display:none; flex-direction:column; }
   #callModal.open { display:flex; }
   #callRemoteVideo { flex:1; background:#000; position:relative; }
-  #callLocalVideo { position:absolute; bottom:100px; right:16px; width:110px; height:150px; background:var(--plum); border-radius:12px; overflow:hidden; z-index:2; border: 2px solid rgba(251,244,234,0.25); }
+  #callLocalVideo { position:absolute; bottom:100px; right:16px; width:110px; height:150px; background:var(--plum); border-radius:12px; overflow:hidden; z-index:2; border: 2px solid rgba(74,36,56,0.25); }
   .call-status-bar { position:absolute; top:0; left:0; right:0; padding: 18px; text-align:center; color:var(--cream); background: linear-gradient(180deg, rgba(0,0,0,0.6), transparent); z-index:2; }
   .call-controls { display:flex; gap:16px; justify-content:center; padding: 22px; background: var(--ink-soft); }
-  .call-ctrl-btn { width:56px; height:56px; border-radius:50%; border:none; font-size:1.3rem; background: rgba(251,244,234,0.12); color:var(--cream); }
+  .call-ctrl-btn { width:56px; height:56px; border-radius:50%; border:none; font-size:1.3rem; background: rgba(74,36,56,0.12); color:var(--cream); }
   .call-ctrl-btn.hangup { background: var(--coral); }
   .call-ctrl-btn.off { background: rgba(232,93,76,0.35); }
 
@@ -66,7 +66,7 @@
 
   /* Voice notes */
   .voice-bubble { display:flex; align-items:center; gap:10px; padding: 10px 14px; min-width: 160px; }
-  .voice-bubble .vb-play { width:32px; height:32px; border-radius:50%; background: rgba(251,244,234,0.15); border:none; color:inherit; flex-shrink:0; }
+  .voice-bubble .vb-play { width:32px; height:32px; border-radius:50%; background: rgba(74,36,56,0.15); border:none; color:inherit; flex-shrink:0; }
   .voice-bubble .vb-dur { font-size:0.76rem; opacity:0.8; }
   #recordBtn.recording { background: var(--coral); color:#fff; animation: pulse 1s infinite; }
   #recordIndicator { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:var(--coral); color:#fff; padding:8px 18px; border-radius:999px; font-size:0.82rem; font-weight:700; display:none; z-index:60; }

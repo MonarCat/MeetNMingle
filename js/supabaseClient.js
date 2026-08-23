@@ -46,10 +46,10 @@ export async function requireProfile(session) {
     return null;
   }
   if (data.is_banned) {
-    document.body.innerHTML = `<div style="max-width:420px; margin:15vh auto; text-align:center; padding:24px; font-family:sans-serif; color:#FBF4EA;">
+    document.body.innerHTML = `<div style="max-width:420px; margin:15vh auto; text-align:center; padding:24px; font-family:sans-serif; color:#4A2438;">
       <h2 style="font-family:'Fraunces',serif;">Account suspended</h2>
-      <p style="color:#E9DFD2;">${data.ban_reason ? data.ban_reason : 'Your account was suspended for violating MeetNMingle\'s Terms of Service.'}</p>
-      <p style="color:#E9DFD2; font-size:0.85rem;">Contact support via afams.co.ke if you believe this is a mistake.</p>
+      <p style="color:#8C6B78;">${data.ban_reason ? data.ban_reason : 'Your account was suspended for violating MeetNMingle\'s Terms of Service.'}</p>
+      <p style="color:#8C6B78; font-size:0.85rem;">Contact support via afams.co.ke if you believe this is a mistake.</p>
     </div>`;
     return null;
   }
