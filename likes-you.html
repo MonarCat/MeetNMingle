@@ -31,8 +31,8 @@
     <div id="likerGrid" class="liker-grid"></div>
     <div class="upsell-overlay" id="upsellOverlay" style="display:none;">
       <div class="icon">⭐</div>
-      <p>See everyone who's already liked you — upgrade to Silver to unlock this.</p>
-      <a href="pricing.html" class="btn btn-primary">Upgrade to Silver</a>
+      <p>See everyone who's already liked you — upgrade to Premium to unlock this.</p>
+      <a href="pricing.html" class="btn btn-primary">Upgrade to Premium</a>
     </div>
   </div>
   <div id="emptyState" class="empty-state" style="display:none;"></div>
@@ -111,7 +111,7 @@
     if (me.subscription_tier === 'free') {
       subline.textContent = likers.length > 0
         ? `${likers.length} people have liked you — upgrade to see who.`
-        : `Upgrade to Silver to see who's liked you, the moment it happens.`;
+        : `Upgrade to Premium to see who's liked you, the moment it happens.`;
       if (likers.length > 0) {
         likers.slice(0, 6).forEach(p => gridEl.appendChild(renderCard(p, true)));
         gridEl.classList.add('blurred');

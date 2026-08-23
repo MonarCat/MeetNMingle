@@ -203,7 +203,7 @@
 
   document.getElementById('attachBtn').onclick = () => {
     if (me.subscription_tier === 'free') {
-      toast('Upgrade to Silver to share photos in chat.', 'error');
+      toast('Upgrade to Premium to share photos in chat.', 'error');
       setTimeout(() => window.location.href = 'pricing.html', 1400);
       return;
     }

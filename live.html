@@ -25,6 +25,8 @@
   .tip-btn { padding: 8px 16px; border-radius: 999px; border: 1.5px solid rgba(251,244,234,0.15); background: var(--ink-soft); color: var(--cream-dim); font-weight:700; font-size:0.82rem; }
 
   .go-live-card { border: 1.5px dashed rgba(251,244,234,0.2); border-radius: var(--radius-md); padding: 20px; text-align:center; margin-bottom: 22px; }
+  .quota-badge { display:inline-flex; align-items:center; gap:6px; background: rgba(243,165,59,0.15); color: var(--amber); font-size:0.78rem; font-weight:700; padding:6px 14px; border-radius:999px; margin-top:10px; }
+  .stage-quota { text-align:center; font-size:0.8rem; color:var(--amber); margin-top:8px; }
 </style>
 </head>
 <body>
@@ -34,7 +36,7 @@
   </div>
 
   <div class="go-live-card" id="goLiveCard">
-    <p style="color:var(--cream-dim); font-size:0.88rem; margin:0 0 12px;">Hosting live sessions is a Diamond feature.</p>
+    <p style="color:var(--cream-dim); font-size:0.88rem; margin:0 0 12px;" id="goLiveText">Free accounts get 5 minutes of live video a day — hosting or watching.</p>
     <button class="btn btn-primary" id="goLiveBtn">🔴 Go live</button>
   </div>
 
@@ -50,6 +52,7 @@
     <div class="stage-meta">
       <div id="stageTitle" style="font-weight:700;"></div>
       <div id="stageHost" style="color:var(--cream-dim); font-size:0.85rem;"></div>
+      <div id="stageQuota" class="stage-quota" style="display:none;"></div>
     </div>
     <div class="stage-controls" id="hostControls" style="display:none;">
       <button class="btn btn-outline" id="toggleMicBtn">🎤 Mute</button>
@@ -84,6 +87,7 @@
   let localTracks = { mic: null, cam: null };
   let currentSession = null;
   let isHosting = false;
+  let quotaInterval = null;
 
   async function getToken(channelName, uid) {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/agora-token`, {
@@ -94,6 +98,47 @@
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Could not get a video token');
     return json;
+  }
+
+  function fmtMinSec(totalSeconds) {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function startQuotaTracking() {
+    if (me.subscription_tier === 'premium' || me.is_admin) return; // unlimited
+    document.getElementById('stageQuota').style.display = 'block';
+    quotaInterval = setInterval(async () => {
+      try {
+        const { data: remaining, error } = await supabase.rpc('consume_live_seconds', { p_seconds: 15 });
+        if (error) throw error;
+        document.getElementById('stageQuota').textContent = `⏱ ${fmtMinSec(remaining)} left today on the Free plan`;
+        if (remaining <= 0) {
+          toast('Your 5 free minutes are up for today. Upgrade to Premium for unlimited live video.', 'error');
+          await leaveStage();
+          setTimeout(() => window.location.href = 'pricing.html', 1600);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }, 15000);
+  }
+  function stopQuotaTracking() {
+    if (quotaInterval) { clearInterval(quotaInterval); quotaInterval = null; }
+    document.getElementById('stageQuota').style.display = 'none';
+  }
+
+  async function leaveStage() {
+    localTracks.mic?.close(); localTracks.cam?.close();
+    localTracks = { mic: null, cam: null };
+    if (agoraClient) await agoraClient.leave();
+    if (isHosting && currentSession) {
+      await supabase.from('live_sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', currentSession.id);
+    }
+    stopQuotaTracking();
+    hideStage();
+    loadLiveSessions();
   }
 
   function randomUid() {
@@ -168,28 +213,36 @@
       await client.join(appId, s.channel_name, token, uid);
       currentSession = s;
       isHosting = false;
+      document.getElementById('remoteVideo').style.display = 'block';
+      document.getElementById('localVideo').style.display = 'none';
       document.getElementById('stageTitle').textContent = s.title || 'Live session';
       document.getElementById('stageHost').textContent = 'Hosted by ' + (s.profiles?.display_name || 'someone');
       document.getElementById('audienceControls').style.display = 'flex';
       document.getElementById('tipRow').style.display = 'flex';
       showStage();
+      startQuotaTracking();
     } catch (e) {
       toast(e.message, 'error');
     }
   }
 
-  document.getElementById('leaveLiveBtn').onclick = async () => {
-    if (agoraClient) await agoraClient.leave();
-    hideStage();
-  };
+  document.getElementById('leaveLiveBtn').onclick = leaveStage;
 
   document.getElementById('goLiveBtn').onclick = async () => {
+    if (me.subscription_tier !== 'premium' && !me.is_admin) {
+      const { data: remaining } = await supabase.rpc('get_live_seconds_remaining');
+      if (remaining !== undefined && remaining <= 0) {
+        toast('You\'ve used your 5 free minutes of live video today. Upgrade to Premium for unlimited access.', 'error');
+        setTimeout(() => window.location.href = 'pricing.html', 1400);
+        return;
+      }
+    }
     const title = prompt('What\'s your live session called?');
     if (title === null) return;
     const { data: created, error } = await supabase.from('live_sessions').insert({
       host_id: me.id, title: title.trim() || 'Live with ' + me.display_name, is_paid: false, status: 'scheduled',
     }).select().single();
-    if (error) { toast(error.message.includes('policy') ? 'Hosting requires the Diamond plan.' : error.message, 'error'); return; }
+    if (error) { toast(error.message, 'error'); return; }
 
     try {
       const uid = randomUid();
@@ -213,6 +266,7 @@
       document.getElementById('stageHost').textContent = 'You are live';
       document.getElementById('hostControls').style.display = 'flex';
       showStage();
+      startQuotaTracking();
       toast('You\'re live!', 'success');
     } catch (e) {
       toast(e.message, 'error');
@@ -233,13 +287,7 @@
   };
   document.getElementById('endLiveBtn').onclick = async () => {
     if (!confirm('End your live session?')) return;
-    localTracks.mic?.close(); localTracks.cam?.close();
-    if (agoraClient) await agoraClient.leave();
-    if (currentSession) {
-      await supabase.from('live_sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', currentSession.id);
-    }
-    hideStage();
-    loadLiveSessions();
+    await leaveStage();
     toast('Live session ended.', 'success');
   };
 
@@ -249,8 +297,14 @@
     me = await requireProfile(session);
     if (!me) return;
 
-    if (me.subscription_tier === 'diamond' || me.is_admin) {
-      document.getElementById('goLiveCard').querySelector('p').textContent = 'Ready to go live? Your audience will see you instantly.';
+    if (me.subscription_tier === 'premium' || me.is_admin) {
+      document.getElementById('goLiveText').textContent = 'Ready to go live? Your audience will see you instantly.';
+    } else {
+      const { data: remaining } = await supabase.rpc('get_live_seconds_remaining');
+      if (remaining !== undefined && remaining !== null) {
+        document.getElementById('goLiveCard').insertAdjacentHTML('beforeend',
+          `<div class="quota-badge">⏱ ${fmtMinSec(remaining)} left today</div>`);
+      }
     }
     await loadLiveSessions();
   })();

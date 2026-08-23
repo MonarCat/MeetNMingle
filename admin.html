@@ -53,9 +53,7 @@
 
   .tier-tag { padding: 3px 9px; border-radius: 999px; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; }
   .tier-free { background: rgba(251,244,234,0.1); color: var(--cream-dim); }
-  .tier-silver { background: rgba(200,200,210,0.2); color: #DADAE0; }
-  .tier-gold { background: rgba(243,165,59,0.18); color: var(--amber); }
-  .tier-diamond { background: rgba(31,169,138,0.18); color: var(--jade); }
+  .tier-premium { background: rgba(243,165,59,0.18); color: var(--amber); }
   .banned-tag { background: var(--coral); color: var(--cream); padding: 3px 9px; border-radius: 999px; font-size: 0.65rem; font-weight: 800; margin-left: 6px; }
 
   .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -176,7 +174,7 @@
       <div class="card stat-card"><div class="label">Pending payments</div><div class="value" id="revPending">—</div></div>
       <div class="card stat-card"><div class="label">Live-session tips</div><div class="value" id="revTips">—</div></div>
     </div>
-    <div class="card chart-card"><div class="label" style="color:var(--cream-dim); font-size:0.75rem; margin-bottom:10px;">Revenue by tier</div><canvas id="revenueChart"></canvas></div>
+    <div class="card chart-card"><div class="label" style="color:var(--cream-dim); font-size:0.75rem; margin-bottom:10px;">Monthly vs. yearly subscribers</div><canvas id="revenueChart"></canvas></div>
     <p style="color:var(--cream-dim); font-size:0.82rem; margin-top:14px;">Figures reflect subscriptions granted via M-Pesa/Paystack once live, plus any manual grants made from the Users tab.</p>
   </section>
 
@@ -220,9 +218,11 @@
     <h3 class="display" style="margin-top:0;">Grant subscription</h3>
     <p style="color:var(--cream-dim); font-size:0.85rem;" id="grantUserLabel"></p>
     <div class="field"><label>Tier</label>
-      <select id="grantTier"><option value="silver">Silver</option><option value="gold">Gold</option><option value="diamond">Diamond</option><option value="free">Free (remove premium)</option></select>
+      <select id="grantTier"><option value="premium">Premium</option><option value="free">Free (remove premium)</option></select>
     </div>
-    <div class="field"><label>Duration (days)</label><input type="number" id="grantDays" value="30" min="1"></div>
+    <div class="field" id="grantBillingField"><label>Billing period</label>
+      <select id="grantBillingPeriod"><option value="monthly">Monthly (30 days)</option><option value="yearly">Yearly (365 days)</option></select>
+    </div>
     <div class="field"><label>Note (optional)</label><input type="text" id="grantNote"></div>
     <div style="display:flex; gap:10px;">
       <button class="btn btn-outline btn-block" id="grantCancelBtn">Cancel</button>
@@ -272,7 +272,7 @@
     const { data, error } = await supabase.rpc('admin_overview_stats');
     if (error) { toast(error.message, 'error'); return; }
     document.getElementById('statTotal').textContent = data.total_users;
-    document.getElementById('statPremium').textContent = data.silver_users + data.gold_users + data.diamond_users;
+    document.getElementById('statPremium').textContent = data.premium_users;
     document.getElementById('statNew7').textContent = data.new_users_7d;
     document.getElementById('statActive7').textContent = data.active_7d;
     document.getElementById('statMatches').textContent = data.total_matches;
@@ -280,7 +280,7 @@
     document.getElementById('statPendingReports').textContent = data.pending_reports;
     document.getElementById('statSwipes').textContent = data.total_swipes;
     document.getElementById('sbTotal').textContent = data.total_users;
-    document.getElementById('sbPremium').textContent = data.silver_users + data.gold_users + data.diamond_users;
+    document.getElementById('sbPremium').textContent = data.premium_users;
     document.getElementById('sbFree').textContent = data.free_users;
     document.getElementById('sbBanned').textContent = data.banned_users;
 
@@ -288,19 +288,18 @@
     charts.tier = new Chart(document.getElementById('tierChart'), {
       type: 'bar',
       data: {
-        labels: ['Free','Silver','Gold','Diamond'],
-        datasets: [{ data: [data.free_users, data.silver_users, data.gold_users, data.diamond_users],
-          backgroundColor: ['rgba(251,244,234,0.25)','rgba(200,200,210,0.5)','rgba(243,165,59,0.7)','rgba(31,169,138,0.7)'],
+        labels: ['Free','Premium'],
+        datasets: [{ data: [data.free_users, data.premium_users],
+          backgroundColor: ['rgba(251,244,234,0.25)','rgba(243,165,59,0.7)'],
           borderRadius: 6 }]
       },
       options: { responsive:true, animation:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#E9DFD2'}}, y:{ticks:{color:'#E9DFD2'}} } }
     });
 
     charts.conv?.destroy();
-    const premiumTotal = data.silver_users + data.gold_users + data.diamond_users;
     charts.conv = new Chart(document.getElementById('convChart'), {
       type: 'doughnut',
-      data: { labels: ['Free', 'Premium'], datasets: [{ data: [data.free_users, premiumTotal], backgroundColor: ['rgba(251,244,234,0.2)', '#E8435F'] }] },
+      data: { labels: ['Free', 'Premium'], datasets: [{ data: [data.free_users, data.premium_users], backgroundColor: ['rgba(251,244,234,0.2)', '#E8435F'] }] },
       options: { responsive:true, animation:false, plugins:{legend:{labels:{color:'#E9DFD2'}}} }
     });
   }
@@ -382,11 +381,14 @@
   });
 
   document.getElementById('grantCancelBtn').onclick = () => document.getElementById('grantModal').classList.remove('open');
+  document.getElementById('grantTier').addEventListener('change', (e) => {
+    document.getElementById('grantBillingField').style.display = e.target.value === 'premium' ? 'flex' : 'none';
+  });
   document.getElementById('grantConfirmBtn').onclick = async () => {
     const tier = document.getElementById('grantTier').value;
-    const days = parseInt(document.getElementById('grantDays').value) || 30;
+    const billingPeriod = document.getElementById('grantBillingPeriod').value;
     const note = document.getElementById('grantNote').value.trim() || null;
-    const { error } = await supabase.rpc('admin_grant_subscription', { p_user_id: grantTargetId, p_tier: tier, p_days: days, p_note: note });
+    const { error } = await supabase.rpc('admin_grant_subscription', { p_user_id: grantTargetId, p_tier: tier, p_billing_period: billingPeriod, p_note: note });
     document.getElementById('grantModal').classList.remove('open');
     if (error) { toast(error.message, 'error'); return; }
     toast(`Granted ${tier} to ${grantTargetName}.`, 'success');
@@ -402,21 +404,18 @@
     document.getElementById('revPending').textContent = data.pending_payments;
     document.getElementById('revTips').textContent = fmtKES(data.live_session_tips_total);
 
-    const tiers = data.by_tier || {};
-    const labels = Object.keys(tiers);
-    const values = labels.map(t => tiers[t].count * tiers[t].price_kes);
     charts.revenue?.destroy();
     charts.revenue = new Chart(document.getElementById('revenueChart'), {
       type: 'bar',
-      data: { labels: labels.length ? labels : ['No active subscriptions yet'], datasets: [{ data: values.length ? values : [0], backgroundColor: '#F3A53B', borderRadius: 6 }] },
-      options: { responsive:true, animation:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#E9DFD2'}}, y:{ticks:{color:'#E9DFD2', callback: v => 'KES ' + v}} } }
+      data: { labels: ['Monthly (KES 799)', 'Yearly (KES 7,990)'], datasets: [{ data: [data.monthly_subs || 0, data.yearly_subs || 0], backgroundColor: '#F3A53B', borderRadius: 6 }] },
+      options: { responsive:true, animation:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#E9DFD2'}}, y:{ticks:{color:'#E9DFD2'}, beginAtZero:true, precision:0 } } }
     });
   }
 
   // ---- EMAIL CENTER ----
   const TEMPLATES = {
     welcome: { label: '👋 Welcome', desc: 'New user onboarding', subject: 'Karibu to MeetNMingle 🎉', body: '<p>Hello {{name}},</p><p>Welcome to MeetNMingle — Kenya\'s free dating platform. Complete your profile and start discovering matches by interest.</p>' },
-    upgrade_nudge: { label: '⭐ Upgrade nudge', desc: 'Free user premium upsell', subject: 'See who already liked you on MeetNMingle', body: '<p>Hello {{name}},</p><p>People have been liking your profile — upgrade to Silver to see exactly who, plus share photos in chat.</p>' },
+    upgrade_nudge: { label: '⭐ Upgrade nudge', desc: 'Free user premium upsell', subject: 'See who already liked you on MeetNMingle', body: '<p>Hello {{name}},</p><p>People have been liking your profile — upgrade to Premium to see exactly who, plus share photos in chat and get unlimited live video.</p>' },
     safety_reminder: { label: '🛡️ Safety reminder', desc: 'Periodic safety tips', subject: 'A quick safety reminder from MeetNMingle', body: '<p>Hello {{name}},</p><p>Always meet new matches in public places, and use our report/block tools if anything feels off.</p>' },
     custom: { label: '✏️ Custom', desc: 'Compose from scratch', subject: '', body: '<p>Hello {{name}},</p><p>Write your message here…</p>' },
   };

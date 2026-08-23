@@ -10,12 +10,34 @@
   .avatar-picker { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
   .avatar-preview { width: 84px; height: 84px; border-radius: 50%; background: var(--ink); background-size: cover; background-position: center; border: 2px dashed rgba(251,244,234,0.2); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: var(--cream-dim); flex-shrink: 0; overflow: hidden; }
   .back-link { display:inline-block; margin-bottom: 14px; color: var(--cream-dim); font-size: 0.9rem; }
+
+  .gallery-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .gallery-count { font-size:0.78rem; color:var(--cream-dim); }
+  .gallery-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-bottom:16px; }
+  .gallery-item { position:relative; aspect-ratio: 3/4; border-radius: 12px; overflow:hidden; background: var(--ink); }
+  .gallery-item img, .gallery-item video { width:100%; height:100%; object-fit:cover; }
+  .gallery-item .remove-btn { position:absolute; top:5px; right:5px; width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,0.6); color:#fff; border:none; font-size:0.7rem; line-height:1; }
+  .gallery-item .video-badge { position:absolute; bottom:5px; left:5px; background:rgba(0,0,0,0.6); color:#fff; font-size:0.62rem; padding:2px 6px; border-radius:6px; }
+  .gallery-add { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:4px; border:1.5px dashed rgba(251,244,234,0.2); border-radius:12px; aspect-ratio:3/4; color:var(--cream-dim); font-size:0.72rem; background:none; }
+  .gallery-add:disabled { opacity:0.4; }
+  .upsell-note { font-size:0.76rem; color:var(--amber); margin-bottom:16px; }
 </style>
 </head>
 <body>
 <div class="page-wrap">
   <a href="profile.html" class="back-link">← Back to profile</a>
   <h1 class="display" style="font-size:1.5rem; margin-bottom:20px;">Edit your profile</h1>
+
+  <div class="card" style="padding:26px; margin-bottom:18px;">
+    <div class="gallery-head">
+      <label style="font-weight:700; font-size:0.9rem;">Photos & videos</label>
+      <span class="gallery-count" id="galleryCount">—</span>
+    </div>
+    <div id="galleryGrid" class="gallery-grid"></div>
+    <p class="upsell-note" id="galleryUpsell" style="display:none;"></p>
+    <input type="file" id="photoInput" accept="image/*" style="display:none;">
+    <input type="file" id="videoInput" accept="video/mp4,video/quicktime" style="display:none;">
+  </div>
 
   <form id="editForm" class="card" style="padding:26px;">
     <div class="avatar-picker">
@@ -78,6 +100,7 @@
 
   let session, me;
   let avatarBlob = null;
+  let galleryItems = [];
   const selectedInterests = new Set();
   const selectedGenders = new Set();
 
@@ -86,6 +109,119 @@
     t.textContent = msg; t.className = 'toast show ' + type;
     setTimeout(() => t.classList.remove('show'), 3200);
   }
+
+  // ---- Gallery ----
+  function mediaUrl(path) {
+    return supabase.storage.from('profile-media').getPublicUrl(path).data.publicUrl;
+  }
+
+  function renderGallery() {
+    const isPremium = me.subscription_tier === 'premium' || me.is_admin;
+    const imageCap = isPremium ? 20 : 3;
+    const videoCap = isPremium ? 3 : 0;
+    const images = galleryItems.filter(m => m.media_type === 'image');
+    const videos = galleryItems.filter(m => m.media_type === 'video');
+
+    document.getElementById('galleryCount').textContent = isPremium
+      ? `${images.length}/${imageCap} photos · ${videos.length}/${videoCap} videos`
+      : `${images.length}/${imageCap} photos`;
+
+    const upsellEl = document.getElementById('galleryUpsell');
+    if (!isPremium) {
+      upsellEl.style.display = 'block';
+      upsellEl.innerHTML = `Free accounts get ${imageCap} photos. <a href="pricing.html" style="color:var(--amber); font-weight:700;">Upgrade to Premium</a> for up to 20 photos + 3 highlight videos.`;
+    } else {
+      upsellEl.style.display = 'none';
+    }
+
+    const gridEl = document.getElementById('galleryGrid');
+    gridEl.innerHTML = '';
+    galleryItems.forEach(item => {
+      const cell = document.createElement('div');
+      cell.className = 'gallery-item';
+      if (item.media_type === 'video') {
+        cell.innerHTML = `<video src="${mediaUrl(item.storage_path)}" muted playsinline></video><span class="video-badge">▶ video</span>`;
+      } else {
+        cell.innerHTML = `<img src="${mediaUrl(item.storage_path)}" alt="">`;
+      }
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-btn';
+      removeBtn.textContent = '✕';
+      removeBtn.onclick = () => deleteMedia(item);
+      cell.appendChild(removeBtn);
+      gridEl.appendChild(cell);
+    });
+
+    if (images.length < imageCap) {
+      const addPhoto = document.createElement('button');
+      addPhoto.type = 'button';
+      addPhoto.className = 'gallery-add';
+      addPhoto.innerHTML = '📷<span>Add photo</span>';
+      addPhoto.onclick = () => document.getElementById('photoInput').click();
+      gridEl.appendChild(addPhoto);
+    }
+    if (isPremium && videos.length < videoCap) {
+      const addVideo = document.createElement('button');
+      addVideo.type = 'button';
+      addVideo.className = 'gallery-add';
+      addVideo.innerHTML = '🎬<span>Add video</span>';
+      addVideo.onclick = () => document.getElementById('videoInput').click();
+      gridEl.appendChild(addVideo);
+    }
+  }
+
+  async function loadGallery() {
+    const { data } = await supabase.from('profile_media').select('*').eq('profile_id', me.id).order('position');
+    galleryItems = data || [];
+    renderGallery();
+  }
+
+  async function deleteMedia(item) {
+    if (!confirm('Remove this from your profile?')) return;
+    await supabase.storage.from('profile-media').remove([item.storage_path]);
+    const { error } = await supabase.from('profile_media').delete().eq('id', item.id);
+    if (error) { toast(error.message, 'error'); return; }
+    galleryItems = galleryItems.filter(m => m.id !== item.id);
+    renderGallery();
+  }
+
+  async function uploadMedia(file, mediaType) {
+    const path = `${me.id}/${crypto.randomUUID()}-${file.name}`;
+    const { error: upErr } = await supabase.storage.from('profile-media').upload(path, file);
+    if (upErr) { toast('Upload failed: ' + upErr.message, 'error'); return; }
+    const { data: inserted, error: insErr } = await supabase.from('profile_media').insert({
+      profile_id: me.id, media_type: mediaType, storage_path: path, position: galleryItems.length,
+    }).select().single();
+    if (insErr) {
+      await supabase.storage.from('profile-media').remove([path]); // roll back the orphaned upload
+      toast(insErr.message, 'error');
+      return;
+    }
+    galleryItems.push(inserted);
+    renderGallery();
+    toast('Added to your profile!', 'success');
+  }
+
+  document.getElementById('photoInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    uploadMedia(file, 'image');
+  });
+  document.getElementById('videoInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) { toast('Video must be under 50MB.', 'error'); return; }
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => {
+      URL.revokeObjectURL(probe.src);
+      if (probe.duration > 30) { toast('Highlight videos must be 30 seconds or shorter.', 'error'); return; }
+      uploadMedia(file, 'video');
+    };
+    probe.src = URL.createObjectURL(file);
+  });
 
   const countySelect = document.getElementById('county');
   countySelect.innerHTML = KENYAN_COUNTIES.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -157,6 +293,7 @@
 
     const { data: myInterests } = await supabase.from('profile_interests').select('interest_id').eq('profile_id', me.id);
     await loadInterests(new Set((myInterests||[]).map(i => i.interest_id)));
+    await loadGallery();
   })();
 
   document.getElementById('editForm').addEventListener('submit', async (e) => {

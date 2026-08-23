@@ -21,12 +21,17 @@ accountability built in from day one.
   (18+ enforced both client- and DB-side), gender & who you're interested in,
   county/town, bio, avatar upload, and interest selection.
 - **Edit profile** (`edit-profile.html`) — update any of the above after
-  onboarding, linked from `profile.html`.
+  onboarding, linked from `profile.html`. Includes a **photo/video gallery
+  manager**: Free accounts get 3 photos, Premium gets 20 photos + 3 short
+  (≤30s) highlight videos. The limit is enforced server-side by a
+  `BEFORE INSERT` trigger on `profile_media` — not just the UI — so it can't
+  be bypassed by calling the API directly. Gallery photos/videos also show
+  up as a tap-through carousel on Discover cards, with a dot indicator.
 - **Discover** (`discover.html`) — candidate profiles filtered by mutual
   gender preference, ranked by number of shared interests, with filters for
-  county, age range, minimum rating, and required shared interests. Like/Pass,
-  with a mutual-like auto-creating a match (DB trigger).
-- **Who liked you** (`likes-you.html`) — Silver+ feature; Free users see a
+  gender, county, age range, minimum rating, and required shared interests.
+  Like/Pass, with a mutual-like auto-creating a match (DB trigger).
+- **Who liked you** (`likes-you.html`) — Premium feature; Free users see a
   blurred teaser with an upgrade prompt.
 - **Matches & chat** (`matches.html`, `chat.html`) — real-time messaging
   (Supabase Realtime), photo sharing with:
@@ -58,21 +63,24 @@ accountability built in from day one.
     automatically by the RPCs above).
   To add another admin: `update public.profiles set is_admin = true where id
   = '<user-id>';`
-- **Live video sessions** (`live.html`) — Diamond-tier (or admin) users can go
-  live via **Agora RTC**; anyone can browse and watch. Token issuance is
-  server-side only (`agora-token` edge function): the client never sees your
-  App Certificate, and host-vs-audience role is derived from `live_sessions.
-  host_id` on the server, never trusted from the client. Hosting is also
-  gated at the RLS level (`live_sessions` insert policy requires
-  `subscription_tier = 'diamond'` or `is_admin`), so the check holds even if
-  the edge function were bypassed. Tipping UI exists but is disabled
-  ("coming soon") until a payment provider is live — see below.
-- **Subscriptions** (`pricing.html`) — Silver (KES 199), Gold (KES 299),
-  Diamond (KES 399) tiers, paid via **M-Pesa STK Push** through two Supabase
-  Edge Functions (`mpesa-stkpush`, `mpesa-callback`). Photo sharing in chat is
-  gated to Silver+. Currently shown as "coming soon" in the UI
-  (`PAYMENTS_ENABLED = false` in `pricing.html`) pending the Paystack
-  multi-business/webhook question below.
+- **Live video sessions** (`live.html`) — anyone can host or watch via
+  **Agora RTC**. Free accounts get **5 minutes/day** (host or watch, tracked
+  together) via `daily_feature_usage` + the `consume_live_seconds()` /
+  `get_live_seconds_remaining()` RPCs — the client polls every 15s and force-
+  ends the session when the day's quota runs out. Premium and admin accounts
+  are unlimited. Token issuance is server-side only (`agora-token` edge
+  function): the client never sees your App Certificate, and host-vs-
+  audience role is derived from `live_sessions.host_id` on the server, never
+  trusted from the client. Tipping UI exists but is disabled ("coming soon")
+  until a payment provider is live — see below.
+- **Subscriptions** (`pricing.html`) — two tiers only: **Free** and
+  **Premium** (KES 799/month or KES 7,990/year, picked via a toggle on the
+  pricing page). Paid via **M-Pesa STK Push** through two Supabase Edge
+  Functions (`mpesa-stkpush`, `mpesa-callback`). Photo sharing in chat,
+  who-liked-you, unlimited live video, and the profile media gallery cap are
+  all gated on `subscription_tier <> 'free'`. Currently shown as "coming
+  soon" in the UI (`PAYMENTS_ENABLED = false` in `pricing.html`) pending the
+  Paystack multi-business/webhook question below.
 
 ## Not yet wired up (needs your own accounts/keys)
 
@@ -115,8 +123,8 @@ Paystack login is normal and supported:
 - Use Paystack's **"Add a Business"** feature (dropdown next to your
   business name) to create a separate business per product, reusing the
   same registration documents. Each gets its own API keys, its own
-  transaction ledger, and its own **Plans** (Silver/Gold/Diamond here won't
-  collide with Salary Calculator's monthly/yearly plans).
+  transaction ledger, and its own **Plans** (MeetNMingle's Premium
+  Monthly/Yearly won't collide with Salary Calculator's own plans).
 - **Unconfirmed:** whether each added business also gets its own webhook
   URL, or whether webhooks stay account-wide regardless of how many
   businesses exist. Paystack's docs are only clear that *one business = one
@@ -126,7 +134,7 @@ Paystack login is normal and supported:
   dispatches by a reference prefix, e.g. `MNM-xxxx` vs `SC-xxxx`).
 - **Worth disclosing to Paystack upfront:** dating platforms are generally
   treated as higher-risk (more KYC, not necessarily rejection), and the
-  Diamond-tier live-session tipping feature resembles a "creator tipping"
+  Premium-tier live-session tipping feature resembles a "creator tipping"
   model, which is its own scrutinized category elsewhere. Better to mention
   both when registering the business than to find out after building on
   top of it.
@@ -136,9 +144,10 @@ Paystack login is normal and supported:
 All schema, RLS policies, triggers, and storage buckets are already applied
 directly to the linked Supabase project — see the Supabase dashboard's
 migration history for the exact SQL. Tables: `profiles`, `interests`,
-`profile_interests`, `swipes`, `matches`, `ratings`, `reports`,
-`blocked_users`, `conversations`, `messages`, `subscription_plans`,
-`user_subscriptions`, `live_sessions`, `live_session_tips`.
+`profile_interests`, `profile_media`, `swipes`, `matches`, `ratings`,
+`reports`, `blocked_users`, `conversations`, `messages`,
+`subscription_plans`, `user_subscriptions`, `live_sessions`,
+`live_session_tips`, `daily_feature_usage`, `audit_log`, `email_log`.
 
 Row Level Security is enabled on every table — users can only read/write
 what they're supposed to (their own data, their matches' conversations,

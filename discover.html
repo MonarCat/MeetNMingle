@@ -11,7 +11,14 @@
     position: absolute; inset: 0; border-radius: var(--radius-lg); overflow: hidden;
     background: var(--ink-soft); box-shadow: var(--shadow-card); display: flex; flex-direction: column;
   }
-  .card-photo { height: 56%; background: linear-gradient(180deg, rgba(23,18,31,0) 40%, rgba(23,18,31,0.9)), var(--plum); background-size: cover; background-position: center; position: relative; display:flex; align-items:flex-end; }
+  .card-photo { height: 56%; background: linear-gradient(180deg, rgba(23,18,31,0) 40%, rgba(23,18,31,0.9)), var(--plum); background-size: cover; background-position: center; position: relative; display:flex; align-items:flex-end; overflow:hidden; }
+  .card-photo img, .card-photo video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0; }
+  .photo-dots { position:absolute; top:10px; left:10px; right:10px; display:flex; gap:4px; z-index:3; }
+  .photo-dots span { flex:1; height:3px; border-radius:2px; background:rgba(255,255,255,0.3); }
+  .photo-dots span.active { background:#fff; }
+  .photo-tap-zone { position:absolute; top:0; bottom:0; width:50%; z-index:2; }
+  .photo-tap-zone.left { left:0; }
+  .photo-tap-zone.right { right:0; }
   .card-photo .name-row { padding: 18px; color: var(--cream); }
   .card-photo .name-row h2 { margin: 0; font-family: var(--font-display); font-size: 1.5rem; }
   .card-photo .meta-line { font-size: 0.85rem; color: var(--cream-dim); margin-top: 4px; display:flex; gap:10px; align-items:center; }
@@ -241,10 +248,25 @@
       interestMap[row.profile_id].add(row.interest_id);
     });
 
+    const { data: allMedia } = await supabase.from('profile_media')
+      .select('profile_id, media_type, storage_path, position')
+      .in('profile_id', filtered.map(c => c.id))
+      .order('position');
+    const mediaMap = {};
+    (allMedia||[]).forEach(row => {
+      if (!mediaMap[row.profile_id]) mediaMap[row.profile_id] = [];
+      mediaMap[row.profile_id].push({
+        type: row.media_type,
+        url: supabase.storage.from('profile-media').getPublicUrl(row.storage_path).data.publicUrl,
+      });
+    });
+
     filtered.forEach(c => {
       const theirs = interestMap[c.id] || new Set();
       c._shared = [...theirs].filter(i => myInterestIds.has(i)).length;
       c._interestIds = theirs;
+      const gallery = mediaMap[c.id] || [];
+      c._photos = c.avatar_url ? [{ type: 'image', url: c.avatar_url }, ...gallery] : gallery;
     });
 
     allCandidates = filtered.sort((a,b) => b._shared - a._shared);
@@ -272,13 +294,26 @@
     currentCandidate = queue[0];
     const c = currentCandidate;
     const interestNames = await fetchInterestNames(c._interestIds);
+    let photoIndex = 0;
+    const photos = c._photos && c._photos.length ? c._photos : [];
 
     const card = document.createElement('div');
     card.className = 'swipe-card';
-    const photoStyle = c.avatar_url ? `background-image: url('${c.avatar_url}')` : '';
+    const dotsHtml = photos.length > 1
+      ? `<div class="photo-dots">${photos.map((_, i) => `<span class="${i === 0 ? 'active' : ''}"></span>`).join('')}</div>`
+      : '';
+    const mediaHtml = photos.length
+      ? (photos[0].type === 'video'
+          ? `<video src="${photos[0].url}" autoplay muted loop playsinline></video>`
+          : `<img src="${photos[0].url}" alt="">`)
+      : '';
     card.innerHTML = `
       <button class="round-btn more" id="moreBtn">⋮</button>
-      <div class="card-photo" style="${photoStyle}">
+      <div class="card-photo" id="cardPhoto">
+        ${mediaHtml}
+        ${dotsHtml}
+        <div class="photo-tap-zone left" id="photoPrev"></div>
+        <div class="photo-tap-zone right" id="photoNext"></div>
         <div class="name-row">
           <h2>${c.display_name}, ${calcAge(c.date_of_birth)}</h2>
           <div class="meta-line">
@@ -295,6 +330,25 @@
       </div>
     `;
     stackWrap.appendChild(card);
+
+    function showPhoto(i) {
+      if (!photos.length) return;
+      photoIndex = (i + photos.length) % photos.length;
+      const p = photos[photoIndex];
+      const photoEl = document.getElementById('cardPhoto');
+      const existing = photoEl.querySelector('img, video');
+      if (existing) existing.remove();
+      const el = document.createElement(p.type === 'video' ? 'video' : 'img');
+      if (p.type === 'video') { el.autoplay = true; el.muted = true; el.loop = true; el.playsInline = true; }
+      el.src = p.url;
+      photoEl.prepend(el);
+      photoEl.querySelectorAll('.photo-dots span').forEach((dot, i2) => dot.classList.toggle('active', i2 === photoIndex));
+    }
+    if (photos.length > 1) {
+      document.getElementById('photoPrev').onclick = (e) => { e.stopPropagation(); showPhoto(photoIndex - 1); };
+      document.getElementById('photoNext').onclick = (e) => { e.stopPropagation(); showPhoto(photoIndex + 1); };
+    }
+
     card.querySelector('#moreBtn').onclick = (e) => {
       e.stopPropagation();
       menuPopover.classList.toggle('open');
