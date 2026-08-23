@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live — MeetNMingle</title>
+<link rel="stylesheet" href="css/tokens.css">
+<script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.20.0.js"></script>
+<style>
+  .live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .live-card { border-radius: var(--radius-md); overflow: hidden; cursor: pointer; position: relative; background: var(--plum); aspect-ratio: 3/4; display:flex; align-items:flex-end; }
+  .live-badge { position:absolute; top:10px; left:10px; background: var(--coral); color:var(--cream); font-size:0.62rem; font-weight:800; padding:3px 9px; border-radius:999px; text-transform:uppercase; display:flex; align-items:center; gap:4px; }
+  .live-badge .dot { width:6px; height:6px; border-radius:50%; background:#fff; animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  .live-card-info { padding: 10px; background: linear-gradient(180deg, transparent, rgba(0,0,0,0.7)); width:100%; }
+  .live-card-info .host { font-weight:700; font-size:0.85rem; }
+  .live-card-info .title { font-size:0.74rem; color:var(--cream-dim); }
+
+  #stageWrap { display:none; }
+  #stageWrap.open { display:block; }
+  #localVideo, #remoteVideo { width: 100%; aspect-ratio: 16/9; background: var(--ink); border-radius: var(--radius-md); overflow: hidden; }
+  .stage-controls { display:flex; gap:10px; justify-content:center; margin-top:14px; flex-wrap: wrap; }
+  .stage-meta { text-align:center; margin: 14px 0; }
+  .tip-row { display:flex; gap:8px; justify-content:center; margin-top:14px; flex-wrap: wrap; }
+  .tip-btn { padding: 8px 16px; border-radius: 999px; border: 1.5px solid rgba(251,244,234,0.15); background: var(--ink-soft); color: var(--cream-dim); font-weight:700; font-size:0.82rem; }
+
+  .go-live-card { border: 1.5px dashed rgba(251,244,234,0.2); border-radius: var(--radius-md); padding: 20px; text-align:center; margin-bottom: 22px; }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+    <h1 class="display" style="font-size:1.6rem; margin:0;">Live now</h1>
+  </div>
+
+  <div class="go-live-card" id="goLiveCard">
+    <p style="color:var(--cream-dim); font-size:0.88rem; margin:0 0 12px;">Hosting live sessions is a Diamond feature.</p>
+    <button class="btn btn-primary" id="goLiveBtn">🔴 Go live</button>
+  </div>
+
+  <div id="liveGrid" class="live-grid"></div>
+  <div id="emptyState" class="empty-state" style="display:none;">
+    <div style="font-size:2.5rem;">📡</div>
+    <p>No one is live right now. Check back soon!</p>
+  </div>
+
+  <div id="stageWrap">
+    <div id="remoteVideo"></div>
+    <div id="localVideo" style="display:none;"></div>
+    <div class="stage-meta">
+      <div id="stageTitle" style="font-weight:700;"></div>
+      <div id="stageHost" style="color:var(--cream-dim); font-size:0.85rem;"></div>
+    </div>
+    <div class="stage-controls" id="hostControls" style="display:none;">
+      <button class="btn btn-outline" id="toggleMicBtn">🎤 Mute</button>
+      <button class="btn btn-outline" id="toggleCamBtn">📷 Hide cam</button>
+      <button class="btn" style="background:var(--coral); color:var(--cream);" id="endLiveBtn">End live</button>
+    </div>
+    <div class="stage-controls" id="audienceControls" style="display:none;">
+      <button class="btn btn-outline" id="leaveLiveBtn">Leave</button>
+    </div>
+    <div class="tip-row" id="tipRow" style="display:none;">
+      <button class="tip-btn" disabled title="Coming soon — Paystack integration pending">💛 Tip KES 50 (coming soon)</button>
+      <button class="tip-btn" disabled title="Coming soon — Paystack integration pending">💛 Tip KES 100 (coming soon)</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { supabase, requireAuth, requireProfile, SUPABASE_URL, SUPABASE_ANON_KEY } from './js/supabaseClient.js';
+  import { renderTabbar } from './js/tabbar.js';
+  renderTabbar('live');
+
+  function toast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show ' + type;
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+
+  let me, session;
+  let agoraClient = null;
+  let localTracks = { mic: null, cam: null };
+  let currentSession = null;
+  let isHosting = false;
+
+  async function getToken(channelName, uid) {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/agora-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ channelName, uid }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Could not get a video token');
+    return json;
+  }
+
+  function randomUid() {
+    return Math.floor(Math.random() * 900000) + 100000;
+  }
+
+  async function loadLiveSessions() {
+    const { data, error } = await supabase.from('live_sessions')
+      .select('id, title, channel_name, host_id, status, started_at, profiles!live_sessions_host_id_fkey(display_name, avatar_url)')
+      .eq('status', 'live')
+      .order('started_at', { ascending: false });
+    const gridEl = document.getElementById('liveGrid');
+    const emptyEl = document.getElementById('emptyState');
+    gridEl.innerHTML = '';
+    if (error || !data || data.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    data.forEach(s => {
+      const host = s.profiles;
+      const card = document.createElement('div');
+      card.className = 'live-card';
+      card.style.backgroundImage = host?.avatar_url ? `url('${host.avatar_url}')` : '';
+      card.style.backgroundSize = 'cover';
+      card.style.backgroundPosition = 'center';
+      card.innerHTML = `
+        <span class="live-badge"><span class="dot"></span> LIVE</span>
+        <div class="live-card-info">
+          <div class="host">${host?.display_name || 'Host'}</div>
+          <div class="title">${s.title || ''}</div>
+        </div>
+      `;
+      card.onclick = () => joinAsAudience(s);
+      gridEl.appendChild(card);
+    });
+  }
+
+  async function setupClient() {
+    if (agoraClient) return agoraClient;
+    agoraClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
+    agoraClient.on('user-published', async (user, mediaType) => {
+      await agoraClient.subscribe(user, mediaType);
+      if (mediaType === 'video') {
+        user.videoTrack.play('remoteVideo');
+      }
+      if (mediaType === 'audio') {
+        user.audioTrack.play();
+      }
+    });
+    return agoraClient;
+  }
+
+  function showStage() {
+    document.getElementById('stageWrap').classList.add('open');
+    window.scrollTo({ top: document.getElementById('stageWrap').offsetTop - 20, behavior: 'smooth' });
+  }
+  function hideStage() {
+    document.getElementById('stageWrap').classList.remove('open');
+    document.getElementById('localVideo').style.display = 'none';
+    document.getElementById('hostControls').style.display = 'none';
+    document.getElementById('audienceControls').style.display = 'none';
+    document.getElementById('tipRow').style.display = 'none';
+  }
+
+  async function joinAsAudience(s) {
+    try {
+      const uid = randomUid();
+      const { token, appId } = await getToken(s.channel_name, uid);
+      const client = await setupClient();
+      await client.setClientRole('audience');
+      await client.join(appId, s.channel_name, token, uid);
+      currentSession = s;
+      isHosting = false;
+      document.getElementById('stageTitle').textContent = s.title || 'Live session';
+      document.getElementById('stageHost').textContent = 'Hosted by ' + (s.profiles?.display_name || 'someone');
+      document.getElementById('audienceControls').style.display = 'flex';
+      document.getElementById('tipRow').style.display = 'flex';
+      showStage();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  document.getElementById('leaveLiveBtn').onclick = async () => {
+    if (agoraClient) await agoraClient.leave();
+    hideStage();
+  };
+
+  document.getElementById('goLiveBtn').onclick = async () => {
+    const title = prompt('What\'s your live session called?');
+    if (title === null) return;
+    const { data: created, error } = await supabase.from('live_sessions').insert({
+      host_id: me.id, title: title.trim() || 'Live with ' + me.display_name, is_paid: false, status: 'scheduled',
+    }).select().single();
+    if (error) { toast(error.message.includes('policy') ? 'Hosting requires the Diamond plan.' : error.message, 'error'); return; }
+
+    try {
+      const uid = randomUid();
+      const { token, appId } = await getToken(created.channel_name, uid);
+      const client = await setupClient();
+      await client.setClientRole('host');
+      await client.join(appId, created.channel_name, token, uid);
+
+      localTracks.mic = await AgoraRTC.createMicrophoneAudioTrack();
+      localTracks.cam = await AgoraRTC.createCameraVideoTrack();
+      localTracks.cam.play('localVideo');
+      document.getElementById('localVideo').style.display = 'block';
+      document.getElementById('remoteVideo').style.display = 'none';
+      await client.publish([localTracks.mic, localTracks.cam]);
+
+      await supabase.from('live_sessions').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', created.id);
+
+      currentSession = created;
+      isHosting = true;
+      document.getElementById('stageTitle').textContent = created.title;
+      document.getElementById('stageHost').textContent = 'You are live';
+      document.getElementById('hostControls').style.display = 'flex';
+      showStage();
+      toast('You\'re live!', 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+      await supabase.from('live_sessions').delete().eq('id', created.id);
+    }
+  };
+
+  let micOn = true, camOn = true;
+  document.getElementById('toggleMicBtn').onclick = async () => {
+    micOn = !micOn;
+    await localTracks.mic?.setEnabled(micOn);
+    document.getElementById('toggleMicBtn').textContent = micOn ? '🎤 Mute' : '🔇 Unmute';
+  };
+  document.getElementById('toggleCamBtn').onclick = async () => {
+    camOn = !camOn;
+    await localTracks.cam?.setEnabled(camOn);
+    document.getElementById('toggleCamBtn').textContent = camOn ? '📷 Hide cam' : '📷 Show cam';
+  };
+  document.getElementById('endLiveBtn').onclick = async () => {
+    if (!confirm('End your live session?')) return;
+    localTracks.mic?.close(); localTracks.cam?.close();
+    if (agoraClient) await agoraClient.leave();
+    if (currentSession) {
+      await supabase.from('live_sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', currentSession.id);
+    }
+    hideStage();
+    loadLiveSessions();
+    toast('Live session ended.', 'success');
+  };
+
+  (async () => {
+    session = await requireAuth();
+    if (!session) return;
+    me = await requireProfile(session);
+    if (!me) return;
+
+    if (me.subscription_tier === 'diamond' || me.is_admin) {
+      document.getElementById('goLiveCard').querySelector('p').textContent = 'Ready to go live? Your audience will see you instantly.';
+    }
+    await loadLiveSessions();
+  })();
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@ export function renderTabbar(active) {
   const items = [
     { key: 'discover', href: 'discover.html', label: 'Discover', icon: '🔥' },
     { key: 'matches', href: 'matches.html', label: 'Matches', icon: '💬' },
+    { key: 'live', href: 'live.html', label: 'Live', icon: '📡' },
     { key: 'pricing', href: 'pricing.html', label: 'Premium', icon: '⭐' },
     { key: 'profile', href: 'profile.html', label: 'Profile', icon: '👤' },
   ];

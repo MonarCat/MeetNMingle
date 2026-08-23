@@ -94,6 +94,10 @@
 <div class="modal-backdrop" id="filterModal">
   <div class="card modal">
     <h3>Filter Discover</h3>
+    <div class="field" id="filterGenderField">
+      <label>Show me</label>
+      <select id="filterGender"><option value="">All (per your preferences)</option></select>
+    </div>
     <div class="field">
       <label>County</label>
       <select id="filterCounty"><option value="">Any county</option></select>
@@ -145,7 +149,7 @@
   let queue = [];
   let allCandidates = [];
   let myInterestIds = new Set();
-  const filters = { county: '', minAge: 18, maxAge: 99, minRating: 0, interestIds: new Set() };
+  const filters = { gender: '', county: '', minAge: 18, maxAge: 99, minRating: 0, interestIds: new Set() };
 
   const stackWrap = document.getElementById('stackWrap');
   const cardActions = document.getElementById('cardActions');
@@ -153,6 +157,7 @@
   let currentCandidate = null;
 
   // ---- filter modal setup ----
+  const filterGenderSelect = document.getElementById('filterGender');
   const filterCountySelect = document.getElementById('filterCounty');
   filterCountySelect.innerHTML += KENYAN_COUNTIES.map(c => `<option value="${c}">${c}</option>`).join('');
 
@@ -174,7 +179,8 @@
 
   document.getElementById('filterOpenBtn').onclick = () => document.getElementById('filterModal').classList.add('open');
   document.getElementById('filterResetBtn').onclick = () => {
-    filters.county = ''; filters.minAge = 18; filters.maxAge = 99; filters.minRating = 0; filters.interestIds.clear();
+    filters.gender = ''; filters.county = ''; filters.minAge = 18; filters.maxAge = 99; filters.minRating = 0; filters.interestIds.clear();
+    filterGenderSelect.value = '';
     filterCountySelect.value = '';
     document.getElementById('filterMinAge').value = 18;
     document.getElementById('filterMaxAge').value = 99;
@@ -182,6 +188,7 @@
     document.querySelectorAll('#filterInterestsPicker .pill').forEach(p => p.classList.remove('selected'));
   };
   document.getElementById('filterApplyBtn').onclick = () => {
+    filters.gender = filterGenderSelect.value;
     filters.county = filterCountySelect.value;
     filters.minAge = parseInt(document.getElementById('filterMinAge').value) || 18;
     filters.maxAge = parseInt(document.getElementById('filterMaxAge').value) || 99;
@@ -193,6 +200,7 @@
   function applyFilters() {
     queue = allCandidates.filter(c => {
       const age = calcAge(c.date_of_birth);
+      if (filters.gender && c.gender !== filters.gender) return false;
       if (age < filters.minAge || age > filters.maxAge) return false;
       if (filters.county && c.county !== filters.county) return false;
       if (filters.minRating > 0 && parseFloat(c.average_rating) < filters.minRating) return false;
@@ -352,6 +360,8 @@
     if (!session) return;
     me = await requireProfile(session);
     if (!me) return;
+    filterGenderSelect.innerHTML += (me.interested_in || []).map(g => `<option value="${g}">${g.charAt(0).toUpperCase() + g.slice(1)}</option>`).join('');
+    if ((me.interested_in || []).length <= 1) document.getElementById('filterGenderField').style.display = 'none';
     await setupFilterInterests();
     await loadCandidates();
     await renderTop();

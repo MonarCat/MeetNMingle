@@ -58,10 +58,21 @@ accountability built in from day one.
     automatically by the RPCs above).
   To add another admin: `update public.profiles set is_admin = true where id
   = '<user-id>';`
+- **Live video sessions** (`live.html`) — Diamond-tier (or admin) users can go
+  live via **Agora RTC**; anyone can browse and watch. Token issuance is
+  server-side only (`agora-token` edge function): the client never sees your
+  App Certificate, and host-vs-audience role is derived from `live_sessions.
+  host_id` on the server, never trusted from the client. Hosting is also
+  gated at the RLS level (`live_sessions` insert policy requires
+  `subscription_tier = 'diamond'` or `is_admin`), so the check holds even if
+  the edge function were bypassed. Tipping UI exists but is disabled
+  ("coming soon") until a payment provider is live — see below.
 - **Subscriptions** (`pricing.html`) — Silver (KES 199), Gold (KES 299),
   Diamond (KES 399) tiers, paid via **M-Pesa STK Push** through two Supabase
   Edge Functions (`mpesa-stkpush`, `mpesa-callback`). Photo sharing in chat is
-  gated to Silver+.
+  gated to Silver+. Currently shown as "coming soon" in the UI
+  (`PAYMENTS_ENABLED = false` in `pricing.html`) pending the Paystack
+  multi-business/webhook question below.
 
 ## Not yet wired up (needs your own accounts/keys)
 
@@ -73,12 +84,17 @@ accountability built in from day one.
      `MPESA_SHORTCODE`, `MPESA_ENV` (`sandbox` or `production`)
    - `MPESA_CALLBACK_URL` = `https://wstbqyvamueahmmvgqjl.supabase.co/functions/v1/mpesa-callback`
    Get these from the [Safaricom Daraja portal](https://developer.safaricom.co.ke/).
-2. **Paystack** — planned as an alternative/additional payment provider.
-   `user_subscriptions.payment_provider` already supports either value.
-3. **Live video calls & public live sessions** (Gold/Diamond perk) — the
-   database has scaffolding (`live_sessions`, `live_session_tips`) but actual
-   video needs a WebRTC provider (e.g. Agora, Daily.co, or Twilio Video).
-   Wire the provider's SDK into a new `live.html` once you've picked one.
+2. **Paystack** — decision pending on a multi-site question (Mikaju Software
+   Solutions runs this alongside Salary Calculator and Mikaju Payroll — see
+   "Paystack multi-site notes" below). `user_subscriptions.payment_provider`
+   already supports either provider.
+3. **Live video** — mostly done. `live.html` is built on **Agora RTC**
+   (App ID `e1e84395fdd34a508bd8ad6c641bebe9`), with server-side token
+   issuance via the `agora-token` edge function. It responds "not
+   configured" until you set:
+   - `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE` (Supabase project secrets)
+   Tipping (`live_session_tips`) is schema-ready but the UI button is
+   disabled until a payment provider is live.
 4. **Google AdSense** — once the site is live on a real domain, apply for
    AdSense, then drop your `ca-pub-XXXXXXXXXXXX` script tag into the `<head>`
    of `index.html` (and any other pages you want ads on).
@@ -90,6 +106,30 @@ accountability built in from day one.
    Until set, it responds with a clear "not configured" error.
 6. **Content moderation on uploads** — nothing currently screens photos
    before they hit storage; worth adding before wide public launch.
+
+## Paystack multi-site notes
+
+Running MeetNMingle, Salary Calculator, and Mikaju Payroll under one
+Paystack login is normal and supported:
+
+- Use Paystack's **"Add a Business"** feature (dropdown next to your
+  business name) to create a separate business per product, reusing the
+  same registration documents. Each gets its own API keys, its own
+  transaction ledger, and its own **Plans** (Silver/Gold/Diamond here won't
+  collide with Salary Calculator's monthly/yearly plans).
+- **Unconfirmed:** whether each added business also gets its own webhook
+  URL, or whether webhooks stay account-wide regardless of how many
+  businesses exist. Paystack's docs are only clear that *one business = one
+  webhook URL* — ask Paystack support directly before building the
+  MeetNMingle payment integration, since the answer changes the
+  architecture (dedicated webhook vs. a shared router function that
+  dispatches by a reference prefix, e.g. `MNM-xxxx` vs `SC-xxxx`).
+- **Worth disclosing to Paystack upfront:** dating platforms are generally
+  treated as higher-risk (more KYC, not necessarily rejection), and the
+  Diamond-tier live-session tipping feature resembles a "creator tipping"
+  model, which is its own scrutinized category elsewhere. Better to mention
+  both when registering the business than to find out after building on
+  top of it.
 
 ## Database
 
