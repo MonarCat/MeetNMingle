@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chat — MeetNMingle</title>
 <link rel="stylesheet" href="css/tokens.css">
+<script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.20.0.js"></script>
 <style>
   body { padding-bottom: 0; }
   .chat-header { display:flex; align-items:center; gap:12px; padding: 14px 18px; background: var(--ink-soft); border-bottom: 1px solid rgba(251,244,234,0.08); position: sticky; top:0; z-index: 20; }
@@ -42,6 +43,35 @@
   .switch.on { background: var(--coral); }
   .switch::after { content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition: transform 0.15s ease; }
   .switch.on::after { transform: translateX(18px); }
+
+  /* Calls */
+  .call-btn { font-size: 1.05rem; }
+  #callModal { position: fixed; inset:0; background: var(--ink); z-index: 90; display:none; flex-direction:column; }
+  #callModal.open { display:flex; }
+  #callRemoteVideo { flex:1; background:#000; position:relative; }
+  #callLocalVideo { position:absolute; bottom:100px; right:16px; width:110px; height:150px; background:var(--plum); border-radius:12px; overflow:hidden; z-index:2; border: 2px solid rgba(251,244,234,0.25); }
+  .call-status-bar { position:absolute; top:0; left:0; right:0; padding: 18px; text-align:center; color:var(--cream); background: linear-gradient(180deg, rgba(0,0,0,0.6), transparent); z-index:2; }
+  .call-controls { display:flex; gap:16px; justify-content:center; padding: 22px; background: var(--ink-soft); }
+  .call-ctrl-btn { width:56px; height:56px; border-radius:50%; border:none; font-size:1.3rem; background: rgba(251,244,234,0.12); color:var(--cream); }
+  .call-ctrl-btn.hangup { background: var(--coral); }
+  .call-ctrl-btn.off { background: rgba(232,93,76,0.35); }
+
+  #incomingCallBanner { position: fixed; top:0; left:0; right:0; z-index: 95; display:none; background: var(--ink-soft); padding: 16px 20px; align-items:center; gap:14px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+  #incomingCallBanner.open { display:flex; }
+  #incomingCallBanner .ic-info { flex:1; }
+  #incomingCallBanner .ic-name { font-weight:700; }
+  #incomingCallBanner .ic-sub { font-size:0.78rem; color:var(--cream-dim); }
+  .ic-accept { background: #3FAE5C; color:#fff; border:none; border-radius:50%; width:44px; height:44px; font-size:1.1rem; }
+  .ic-decline { background: var(--coral); color:#fff; border:none; border-radius:50%; width:44px; height:44px; font-size:1.1rem; }
+
+  /* Voice notes */
+  .voice-bubble { display:flex; align-items:center; gap:10px; padding: 10px 14px; min-width: 160px; }
+  .voice-bubble .vb-play { width:32px; height:32px; border-radius:50%; background: rgba(251,244,234,0.15); border:none; color:inherit; flex-shrink:0; }
+  .voice-bubble .vb-dur { font-size:0.76rem; opacity:0.8; }
+  #recordBtn.recording { background: var(--coral); color:#fff; animation: pulse 1s infinite; }
+  #recordIndicator { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:var(--coral); color:#fff; padding:8px 18px; border-radius:999px; font-size:0.82rem; font-weight:700; display:none; z-index:60; }
+  #recordIndicator.show { display:block; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.45;} }
 </style>
 </head>
 <body>
@@ -52,17 +82,42 @@
   <div style="flex:1;">
     <div class="name" id="peerName">Loading…</div>
   </div>
+  <button class="icon-btn call-btn" id="voiceCallBtn" title="Voice call">📞</button>
+  <button class="icon-btn call-btn" id="videoCallBtn" title="Video call">🎥</button>
   <button class="icon-btn" id="rateBtn" title="Rate this person">⭐</button>
+</div>
+
+<div id="incomingCallBanner">
+  <div class="ic-info">
+    <div class="ic-name" id="icName">Incoming call</div>
+    <div class="ic-sub" id="icSub"></div>
+  </div>
+  <button class="ic-decline" id="icDeclineBtn">✕</button>
+  <button class="ic-accept" id="icAcceptBtn">✓</button>
+</div>
+
+<div id="callModal">
+  <div id="callRemoteVideo">
+    <div id="callLocalVideo"></div>
+    <div class="call-status-bar" id="callStatusBar">Calling…</div>
+  </div>
+  <div class="call-controls">
+    <button class="call-ctrl-btn" id="callMicBtn">🎤</button>
+    <button class="call-ctrl-btn" id="callCamBtn">📷</button>
+    <button class="call-ctrl-btn hangup" id="callHangupBtn">📵</button>
+  </div>
 </div>
 
 <div class="chat-wrap">
   <div class="messages" id="messages"></div>
   <div class="composer">
     <button class="icon-btn" id="attachBtn">📎</button>
+    <button class="icon-btn" id="recordBtn" title="Hold to record a voice note">🎙️</button>
     <input type="text" id="textInput" placeholder="Type a message…">
     <button class="icon-btn send-btn" id="sendBtn">➤</button>
   </div>
 </div>
+<div id="recordIndicator">● Recording… <span id="recordTime">0:00</span> (release to send)</div>
 
 <input type="file" id="fileInput" accept="image/*" style="display:none;">
 
@@ -91,7 +146,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  import { supabase, requireAuth, requireProfile } from './js/supabaseClient.js';
+  import { supabase, requireAuth, requireProfile, SUPABASE_URL, SUPABASE_ANON_KEY } from './js/supabaseClient.js';
 
   function toast(msg, type='') {
     const t = document.getElementById('toast');
@@ -133,6 +188,32 @@
         const wrap = document.createElement('div');
         wrap.className = 'bubble';
         wrap.textContent = '📷 Sent — view once (not opened yet)';
+        row.appendChild(wrap);
+      } else if (msg.media_path && msg.media_type === 'audio') {
+        const wrap = document.createElement('div');
+        wrap.className = 'bubble voice-bubble';
+        const btn = document.createElement('button');
+        btn.className = 'vb-play';
+        btn.textContent = '▶';
+        const dur = document.createElement('span');
+        dur.className = 'vb-dur';
+        dur.textContent = msg.media_duration_seconds ? `${Math.floor(msg.media_duration_seconds/60)}:${String(msg.media_duration_seconds%60).padStart(2,'0')}` : '';
+        let audioEl = null;
+        btn.onclick = async () => {
+          if (audioEl) {
+            if (audioEl.paused) { audioEl.play(); btn.textContent = '⏸'; } else { audioEl.pause(); btn.textContent = '▶'; }
+            return;
+          }
+          const { data } = await supabase.storage.from('chat-media').createSignedUrl(msg.media_path, 3600);
+          if (!data) return;
+          audioEl = new Audio(data.signedUrl);
+          audioEl.onended = () => { btn.textContent = '▶'; };
+          audioEl.play();
+          btn.textContent = '⏸';
+        };
+        wrap.appendChild(btn);
+        wrap.appendChild(document.createTextNode('🎙️'));
+        wrap.appendChild(dur);
         row.appendChild(wrap);
       } else if (msg.media_path) {
         const wrap = document.createElement('div');
@@ -239,6 +320,222 @@
     if (error) toast('Could not send photo', 'error');
   };
 
+  // ---------- Voice notes (push-to-hold record) ----------
+  let mediaRecorder = null, recordChunks = [], recordStart = 0, recordTimerInt = null;
+
+  function canUseRichMedia() {
+    if (me.subscription_tier === 'free') {
+      toast('Upgrade to Premium to send voice notes.', 'error');
+      setTimeout(() => window.location.href = 'pricing.html', 1400);
+      return false;
+    }
+    return true;
+  }
+
+  async function startRecording() {
+    if (!canUseRichMedia()) return;
+    if (mediaRecorder) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordChunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordChunks.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const durationSec = Math.round((Date.now() - recordStart) / 1000);
+        clearInterval(recordTimerInt);
+        document.getElementById('recordIndicator').classList.remove('show');
+        document.getElementById('recordBtn').classList.remove('recording');
+        if (durationSec < 1) { mediaRecorder = null; return; }
+        const blob = new Blob(recordChunks, { type: 'audio/webm' });
+        const path = `${me.id}/${conversationId}-${Date.now()}-voice.webm`;
+        const { error: upErr } = await supabase.storage.from('chat-media').upload(path, blob);
+        mediaRecorder = null;
+        if (upErr) { toast('Voice note failed: ' + upErr.message, 'error'); return; }
+        const { error } = await supabase.from('messages').insert({
+          conversation_id: conversationId, sender_id: me.id,
+          media_path: path, media_type: 'audio', media_duration_seconds: durationSec,
+        });
+        if (error) toast('Could not send voice note', 'error');
+      };
+      mediaRecorder.start();
+      recordStart = Date.now();
+      document.getElementById('recordIndicator').classList.add('show');
+      document.getElementById('recordBtn').classList.add('recording');
+      recordTimerInt = setInterval(() => {
+        const s = Math.round((Date.now() - recordStart) / 1000);
+        document.getElementById('recordTime').textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+      }, 250);
+    } catch (e) {
+      toast('Microphone access is needed to record a voice note.', 'error');
+    }
+  }
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  }
+  const recordBtn = document.getElementById('recordBtn');
+  recordBtn.addEventListener('pointerdown', startRecording);
+  recordBtn.addEventListener('pointerup', stopRecording);
+  recordBtn.addEventListener('pointerleave', stopRecording);
+
+  // ---------- Video / voice calls ----------
+  let agoraClient = null, localTracks = { mic: null, cam: null };
+  let activeCall = null, callQuotaInterval = null, callsChannel = null;
+
+  async function getAgoraToken(channelName, uid, callId) {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/agora-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(await supabase.auth.getSession()).data.session.access_token}`, apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ channelName, uid, callId }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Could not get a call token');
+    return json;
+  }
+  function randomUid() { return Math.floor(Math.random() * 900000) + 100000; }
+
+  async function setupCallClient() {
+    if (agoraClient) return agoraClient;
+    agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+    agoraClient.on('user-published', async (user, mediaType) => {
+      await agoraClient.subscribe(user, mediaType);
+      if (mediaType === 'video') user.videoTrack.play('callRemoteVideo');
+      if (mediaType === 'audio') user.audioTrack.play();
+    });
+    return agoraClient;
+  }
+
+  function startCallQuota() {
+    if (me.subscription_tier === 'premium' || me.is_admin) return;
+    callQuotaInterval = setInterval(async () => {
+      try {
+        const { data: remaining, error } = await supabase.rpc('consume_live_seconds', { p_seconds: 15 });
+        if (error) throw error;
+        if (remaining <= 0) {
+          toast('Your 5 free minutes of video/voice today are used up. Upgrade to Premium for unlimited calls.', 'error');
+          await endCall();
+          setTimeout(() => window.location.href = 'pricing.html', 1600);
+        }
+      } catch (e) { console.error(e); }
+    }, 15000);
+  }
+  function stopCallQuota() { if (callQuotaInterval) { clearInterval(callQuotaInterval); callQuotaInterval = null; } }
+
+  async function joinCallChannel(call, withVideo) {
+    const uid = randomUid();
+    const { token, appId } = await getAgoraToken(call.channel_name, uid, call.id);
+    const client = await setupCallClient();
+    await client.join(appId, call.channel_name, token, uid);
+    try { localTracks.mic = await AgoraRTC.createMicrophoneAudioTrack(); } catch (e) { console.error(e); }
+    if (withVideo) {
+      try { localTracks.cam = await AgoraRTC.createCameraVideoTrack(); localTracks.cam.play('callLocalVideo'); } catch (e) { console.error(e); }
+    }
+    const tracks = [localTracks.mic, localTracks.cam].filter(Boolean);
+    if (tracks.length) await client.publish(tracks);
+    document.getElementById('callStatusBar').textContent = withVideo ? '' : `Voice call with ${peer?.display_name || ''}`;
+    startCallQuota();
+  }
+
+  async function endCall() {
+    localTracks.mic?.close(); localTracks.cam?.close();
+    localTracks = { mic: null, cam: null };
+    if (agoraClient) { await agoraClient.leave(); }
+    if (activeCall) {
+      await supabase.from('calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', activeCall.id).eq('status', 'accepted');
+      await supabase.from('calls').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', activeCall.id).eq('status', 'ringing');
+    }
+    activeCall = null;
+    stopCallQuota();
+    if (outgoingCallChannel) { supabase.removeChannel(outgoingCallChannel); outgoingCallChannel = null; }
+    document.getElementById('callModal').classList.remove('open');
+    document.getElementById('incomingCallBanner').classList.remove('open');
+  }
+
+  let outgoingCallChannel = null;
+  async function startOutgoingCall(callType) {
+    const { data: created, error } = await supabase.from('calls').insert({
+      conversation_id: conversationId, caller_id: me.id, callee_id: peer.id, call_type: callType,
+    }).select().single();
+    if (error) { toast(error.message, 'error'); return; }
+    activeCall = created;
+    document.getElementById('callModal').classList.add('open');
+    document.getElementById('callStatusBar').textContent = `Calling ${peer?.display_name || ''}…`;
+    document.getElementById('callCamBtn').style.display = callType === 'video' ? 'inline-flex' : 'none';
+
+    // Wait for the callee to accept/decline.
+    outgoingCallChannel = supabase
+      .channel(`call-${created.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${created.id}` }, async (payload) => {
+        if (payload.new.status === 'accepted' && activeCall) {
+          await joinCallChannel(created, callType === 'video');
+        } else if (['declined', 'ended', 'missed'].includes(payload.new.status)) {
+          toast(payload.new.status === 'declined' ? 'Call declined.' : 'Call ended.', '');
+          await endCall();
+        }
+      })
+      .subscribe();
+  }
+
+  document.getElementById('voiceCallBtn').onclick = () => startOutgoingCall('voice');
+  document.getElementById('videoCallBtn').onclick = () => startOutgoingCall('video');
+  document.getElementById('callHangupBtn').onclick = endCall;
+  document.getElementById('callMicBtn').onclick = async () => {
+    if (!localTracks.mic) return;
+    const enabled = localTracks.mic.enabled !== false;
+    await localTracks.mic.setEnabled(!enabled);
+    document.getElementById('callMicBtn').classList.toggle('off', enabled);
+  };
+  document.getElementById('callCamBtn').onclick = async () => {
+    if (!localTracks.cam) return;
+    const enabled = localTracks.cam.enabled !== false;
+    await localTracks.cam.setEnabled(!enabled);
+    document.getElementById('callCamBtn').classList.toggle('off', enabled);
+  };
+
+  let incomingCall = null;
+  document.getElementById('icAcceptBtn').onclick = async () => {
+    if (!incomingCall) return;
+    const call = incomingCall;
+    incomingCall = null;
+    document.getElementById('incomingCallBanner').classList.remove('open');
+    const { error } = await supabase.from('calls').update({ status: 'accepted', started_at: new Date().toISOString() }).eq('id', call.id).eq('status', 'ringing');
+    if (error) { toast('That call is no longer available.', 'error'); return; }
+    activeCall = call;
+    document.getElementById('callModal').classList.add('open');
+    document.getElementById('callCamBtn').style.display = call.call_type === 'video' ? 'inline-flex' : 'none';
+    await joinCallChannel(call, call.call_type === 'video');
+  };
+  document.getElementById('icDeclineBtn').onclick = async () => {
+    if (!incomingCall) return;
+    const call = incomingCall;
+    incomingCall = null;
+    document.getElementById('incomingCallBanner').classList.remove('open');
+    await supabase.from('calls').update({ status: 'declined' }).eq('id', call.id).eq('status', 'ringing');
+  };
+
+  function watchForIncomingCalls() {
+    callsChannel = supabase
+      .channel(`calls-inbox-${me.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calls' }, (payload) => {
+        const call = payload.new;
+        if (call.callee_id !== me.id || call.status !== 'ringing') return;
+        if (call.conversation_id !== conversationId) return; // this page only handles this conversation's calls
+        incomingCall = call;
+        document.getElementById('icName').textContent = peer?.display_name || 'Someone';
+        document.getElementById('icSub').textContent = call.call_type === 'video' ? 'Incoming video call' : 'Incoming voice call';
+        document.getElementById('incomingCallBanner').classList.add('open');
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calls' }, (payload) => {
+        const call = payload.new;
+        if (incomingCall && call.id === incomingCall.id && call.status !== 'ringing') {
+          incomingCall = null;
+          document.getElementById('incomingCallBanner').classList.remove('open');
+          toast('The caller ended the call.', '');
+        }
+      })
+      .subscribe();
+  }
+
   document.getElementById('rateBtn').onclick = () => {
     window.location.href = `profile.html?rate=${peer.id}`;
   };
@@ -264,6 +561,7 @@
 
     await loadThread();
     await supabase.rpc('mark_conversation_read', { p_conversation_id: conversationId });
+    watchForIncomingCalls();
 
     supabase
       .channel(`conv-${conversationId}`)

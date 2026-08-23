@@ -27,6 +27,30 @@
   .go-live-card { border: 1.5px dashed rgba(251,244,234,0.2); border-radius: var(--radius-md); padding: 20px; text-align:center; margin-bottom: 22px; }
   .quota-badge { display:inline-flex; align-items:center; gap:6px; background: rgba(243,165,59,0.15); color: var(--amber); font-size:0.78rem; font-weight:700; padding:6px 14px; border-radius:999px; margin-top:10px; }
   .stage-quota { text-align:center; font-size:0.8rem; color:var(--amber); margin-top:8px; }
+
+  /* Live chat */
+  #liveChatPanel { margin-top:16px; border-radius: var(--radius-md); background: var(--ink-soft); display:flex; flex-direction:column; height: 280px; }
+  #liveChatMessages { flex:1; overflow-y:auto; padding: 12px 14px; display:flex; flex-direction:column; gap:6px; }
+  .live-chat-row { font-size: 0.82rem; line-height:1.35; }
+  .live-chat-row .lc-name { font-weight:700; margin-right:6px; }
+  .live-chat-row.masked .lc-name { color: var(--cream-dim); font-style: italic; }
+  .live-chat-composer { display:flex; gap:8px; padding: 10px; border-top: 1px solid rgba(251,244,234,0.08); }
+  .live-chat-composer input[type=text] { flex:1; background: var(--ink); border: 1.5px solid rgba(251,244,234,0.12); border-radius: 999px; padding: 9px 14px; color: var(--cream); font-size: 0.85rem; }
+  .mask-toggle-btn { width:38px; height:38px; border-radius:50%; border:1.5px solid rgba(251,244,234,0.15); background:var(--ink); flex-shrink:0; font-size:1rem; }
+  .mask-toggle-btn.active { background: var(--coral); border-color: var(--coral); }
+  .live-chat-send { width:38px; height:38px; border-radius:50%; background: var(--coral); color:#fff; border:none; flex-shrink:0; }
+
+  /* Audience panel (host) */
+  #audiencePanel { display:none; margin-top:16px; border-radius: var(--radius-md); background: var(--ink-soft); padding: 14px; max-height: 320px; overflow-y:auto; }
+  #audiencePanel.open { display:block; }
+  .audience-row { display:flex; align-items:center; gap:10px; padding: 8px 0; border-bottom: 1px solid rgba(251,244,234,0.06); }
+  .audience-row .aud-avatar { width:36px; height:36px; border-radius:50%; background: var(--plum); background-size:cover; background-position:center; flex-shrink:0; }
+  .audience-row .aud-info { flex:1; min-width:0; }
+  .audience-row .aud-name { font-weight:700; font-size:0.85rem; }
+  .audience-row .aud-tip { font-size:0.72rem; }
+  .audience-row .aud-tip.tipped { color: var(--amber); }
+  .audience-row .aud-tip.not-tipped { color: var(--cream-dim); }
+  .kick-btn { background: transparent; border: 1.5px solid var(--coral); color: var(--coral); border-radius: 999px; padding: 4px 10px; font-size: 0.7rem; font-weight:700; flex-shrink:0; }
 </style>
 </head>
 <body>
@@ -57,14 +81,24 @@
     <div class="stage-controls" id="hostControls" style="display:none;">
       <button class="btn btn-outline" id="toggleMicBtn">🎤 Mute</button>
       <button class="btn btn-outline" id="toggleCamBtn">📷 Hide cam</button>
+      <button class="btn btn-outline" id="audienceToggleBtn">👥 Audience (0)</button>
+      <button class="btn btn-outline" id="editTipsBtn">💛 Edit tip amounts</button>
       <button class="btn" style="background:var(--coral); color:var(--cream);" id="endLiveBtn">End live</button>
     </div>
     <div class="stage-controls" id="audienceControls" style="display:none;">
       <button class="btn btn-outline" id="leaveLiveBtn">Leave</button>
     </div>
-    <div class="tip-row" id="tipRow" style="display:none;">
-      <button class="tip-btn" disabled title="Coming soon — Paystack integration pending">💛 Tip KES 50 (coming soon)</button>
-      <button class="tip-btn" disabled title="Coming soon — Paystack integration pending">💛 Tip KES 100 (coming soon)</button>
+    <div class="tip-row" id="tipRow" style="display:none;"></div>
+
+    <div id="audiencePanel"></div>
+
+    <div id="liveChatPanel" style="display:none;">
+      <div id="liveChatMessages"></div>
+      <div class="live-chat-composer">
+        <button class="mask-toggle-btn" id="maskToggleBtn" title="Send anonymously">🎭</button>
+        <input type="text" id="liveChatInput" placeholder="Say something…" maxlength="300">
+        <button class="live-chat-send" id="liveChatSendBtn">➤</button>
+      </div>
     </div>
   </div>
 </div>
@@ -88,6 +122,9 @@
   let currentSession = null;
   let isHosting = false;
   let quotaInterval = null;
+  let chatChannel = null, kickChannel = null;
+  let lastChatTs = null;
+  let liveChatMasked = false;
 
   async function getToken(channelName, uid) {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/agora-token`, {
@@ -129,13 +166,145 @@
     document.getElementById('stageQuota').style.display = 'none';
   }
 
+  // ---------- Live chat ----------
+  function renderChatRow(m) {
+    const wrap = document.getElementById('liveChatMessages');
+    const row = document.createElement('div');
+    row.className = 'live-chat-row' + (m.display_mode === 'masked' ? ' masked' : '');
+    const nameEl = document.createElement('span');
+    nameEl.className = 'lc-name';
+    nameEl.textContent = (m.display_mode === 'masked' ? '🎭 ' : '') + (m.display_name || 'Guest') + ':';
+    row.appendChild(nameEl);
+    row.appendChild(document.createTextNode(m.content));
+    wrap.appendChild(row);
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  async function loadLiveChat() {
+    const { data, error } = await supabase.rpc('get_live_chat_messages', {
+      p_session_id: currentSession.id, p_after: lastChatTs,
+    });
+    if (error) { console.error(error); return; }
+    (data || []).forEach(m => { renderChatRow(m); lastChatTs = m.created_at; });
+  }
+
+  function openLiveChat() {
+    document.getElementById('liveChatPanel').style.display = 'flex';
+    document.getElementById('liveChatMessages').innerHTML = '';
+    lastChatTs = null;
+    loadLiveChat();
+    chatChannel = supabase
+      .channel(`live-chat-${currentSession.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_chat_messages', filter: `session_id=eq.${currentSession.id}` },
+        () => loadLiveChat())
+      .subscribe();
+  }
+  function closeLiveChat() {
+    document.getElementById('liveChatPanel').style.display = 'none';
+    if (chatChannel) { supabase.removeChannel(chatChannel); chatChannel = null; }
+  }
+
+  document.getElementById('maskToggleBtn').onclick = (e) => {
+    liveChatMasked = !liveChatMasked;
+    e.currentTarget.classList.toggle('active', liveChatMasked);
+    e.currentTarget.title = liveChatMasked ? 'Sending anonymously — tap to use your name' : 'Send anonymously';
+  };
+  async function sendLiveChat() {
+    const input = document.getElementById('liveChatInput');
+    const text = input.value.trim();
+    if (!text || !currentSession) return;
+    input.value = '';
+    const { error } = await supabase.rpc('post_live_chat_message', {
+      p_session_id: currentSession.id, p_content: text, p_masked: liveChatMasked,
+    });
+    if (error) toast(error.message, 'error');
+  }
+  document.getElementById('liveChatSendBtn').onclick = sendLiveChat;
+  document.getElementById('liveChatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendLiveChat(); });
+
+  // ---------- Kick listener (viewer side) ----------
+  function watchForKick() {
+    kickChannel = supabase
+      .channel(`kick-watch-${currentSession.id}-${me.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'live_session_participants',
+        filter: `session_id=eq.${currentSession.id}`,
+      }, (payload) => {
+        if (payload.new.user_id === me.id && payload.new.is_kicked) {
+          toast('You were removed from this live session by the host.', 'error');
+          leaveStage();
+        }
+      })
+      .subscribe();
+  }
+
+  // ---------- Audience panel (host) ----------
+  async function refreshAudience() {
+    const { data, error } = await supabase.rpc('get_live_audience', { p_session_id: currentSession.id });
+    if (error) { console.error(error); return; }
+    const active = (data || []).filter(p => !p.left_at && !p.is_kicked);
+    document.getElementById('audienceToggleBtn').textContent = `👥 Audience (${active.length})`;
+    const panel = document.getElementById('audiencePanel');
+    if (!data || data.length === 0) {
+      panel.innerHTML = '<p style="color:var(--cream-dim); font-size:0.85rem; text-align:center;">No one has joined yet.</p>';
+      return;
+    }
+    panel.innerHTML = data.map(p => `
+      <div class="audience-row">
+        <div class="aud-avatar" style="${p.avatar_url ? `background-image:url('${p.avatar_url}')` : ''}"></div>
+        <div class="aud-info">
+          <div class="aud-name">${p.display_name}${p.left_at ? ' (left)' : ''}${p.is_kicked ? ' (removed)' : ''}</div>
+          <div class="aud-tip ${p.has_tipped ? 'tipped' : 'not-tipped'}">${p.has_tipped ? `💛 Tipped KES ${p.total_tipped_kes}` : 'Not tipped'}</div>
+        </div>
+        ${(!p.is_kicked && !p.left_at) ? `<button class="kick-btn" data-uid="${p.user_id}">Remove</button>` : ''}
+      </div>
+    `).join('');
+    panel.querySelectorAll('.kick-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Remove this viewer from your live session?')) return;
+        const { error } = await supabase.rpc('kick_live_participant', { p_session_id: currentSession.id, p_user_id: btn.dataset.uid });
+        if (error) toast(error.message, 'error'); else { toast('Viewer removed.', 'success'); refreshAudience(); }
+      };
+    });
+  }
+  document.getElementById('audienceToggleBtn').onclick = () => {
+    const panel = document.getElementById('audiencePanel');
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) refreshAudience();
+  };
+  document.getElementById('editTipsBtn').onclick = async () => {
+    const current = (currentSession.tip_options || [50,100,200,500]).join(', ');
+    const input = prompt('Tip amounts in KES, comma-separated (max 6):', current);
+    if (input === null) return;
+    const amounts = input.split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n > 0).slice(0, 6);
+    if (amounts.length === 0) { toast('Enter at least one valid amount.', 'error'); return; }
+    const { error } = await supabase.rpc('set_live_tip_options', { p_session_id: currentSession.id, p_options: amounts });
+    if (error) { toast(error.message, 'error'); return; }
+    currentSession.tip_options = amounts;
+    renderTipRow(amounts);
+    toast('Tip amounts updated.', 'success');
+  };
+
+  function renderTipRow(options) {
+    const row = document.getElementById('tipRow');
+    row.innerHTML = (options || [50,100,200,500]).map(amt =>
+      `<button class="tip-btn" disabled title="Coming soon — payment provider pending">💛 Tip KES ${amt} (coming soon)</button>`
+    ).join('');
+  }
+
   async function leaveStage() {
     localTracks.mic?.close(); localTracks.cam?.close();
     localTracks = { mic: null, cam: null };
     if (agoraClient) await agoraClient.leave();
-    if (isHosting && currentSession) {
-      await supabase.from('live_sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', currentSession.id);
+    if (currentSession) {
+      if (isHosting) {
+        await supabase.from('live_sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', currentSession.id);
+      } else {
+        await supabase.rpc('leave_live_session', { p_session_id: currentSession.id });
+      }
     }
+    closeLiveChat();
+    if (kickChannel) { supabase.removeChannel(kickChannel); kickChannel = null; }
     stopQuotaTracking();
     hideStage();
     loadLiveSessions();
@@ -147,7 +316,7 @@
 
   async function loadLiveSessions() {
     const { data, error } = await supabase.from('live_sessions')
-      .select('id, title, channel_name, host_id, status, started_at, profiles!live_sessions_host_id_fkey(display_name, avatar_url)')
+      .select('id, title, channel_name, host_id, status, started_at, tip_options, profiles!live_sessions_host_id_fkey(display_name, avatar_url)')
       .eq('status', 'live')
       .order('started_at', { ascending: false });
     const gridEl = document.getElementById('liveGrid');
@@ -202,10 +371,15 @@
     document.getElementById('hostControls').style.display = 'none';
     document.getElementById('audienceControls').style.display = 'none';
     document.getElementById('tipRow').style.display = 'none';
+    document.getElementById('audiencePanel').classList.remove('open');
+    document.getElementById('audiencePanel').innerHTML = '';
   }
 
   async function joinAsAudience(s) {
     try {
+      const { error: joinErr } = await supabase.rpc('join_live_session', { p_session_id: s.id, p_display_mode: 'public' });
+      if (joinErr) throw joinErr;
+
       const uid = randomUid();
       const { token, appId } = await getToken(s.channel_name, uid);
       const client = await setupClient();
@@ -219,8 +393,11 @@
       document.getElementById('stageHost').textContent = 'Hosted by ' + (s.profiles?.display_name || 'someone');
       document.getElementById('audienceControls').style.display = 'flex';
       document.getElementById('tipRow').style.display = 'flex';
+      renderTipRow(s.tip_options);
       showStage();
       startQuotaTracking();
+      openLiveChat();
+      watchForKick();
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -254,7 +431,9 @@
       // Mic and camera are requested independently so a missing/blocked
       // device (common on desktops with no webcam or mic) doesn't kill the
       // whole "go live" flow -- the host just goes live with whichever
-      // device is actually available.
+      // device is actually available. Viewers can keep joining and leaving
+      // throughout -- there's no need for the host to restart anything when
+      // someone new tunes in.
       const deviceWarnings = [];
       try {
         localTracks.mic = await AgoraRTC.createMicrophoneAudioTrack();
@@ -293,6 +472,15 @@
       document.getElementById('hostControls').style.display = 'flex';
       showStage();
       startQuotaTracking();
+      openLiveChat();
+      refreshAudience();
+      // Poll the audience panel while it's open (Realtime UPDATE/INSERT on
+      // live_session_participants would also work, but simple polling is
+      // plenty responsive for the panel and keeps this straightforward).
+      const audiencePoll = setInterval(() => {
+        if (!currentSession || !isHosting) { clearInterval(audiencePoll); return; }
+        refreshAudience();
+      }, 8000);
       toast('You\'re live!', 'success');
     } catch (e) {
       toast(e.message, 'error');
