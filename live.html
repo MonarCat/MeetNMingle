@@ -143,6 +143,17 @@
     return `${m}:${s.toString().padStart(2, '0')}`;
   }
 
+  let heartbeatInterval = null;
+  function startHeartbeat() {
+    if (!isHosting || !currentSession) return;
+    heartbeatInterval = setInterval(() => {
+      supabase.rpc('heartbeat_live_session', { p_session_id: currentSession.id }).catch(e => console.error(e));
+    }, 20000);
+  }
+  function stopHeartbeat() {
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  }
+
   function startQuotaTracking() {
     if (me.subscription_tier === 'premium' || me.is_admin) return; // unlimited
     document.getElementById('stageQuota').style.display = 'block';
@@ -288,24 +299,81 @@
   function renderTipRow(options) {
     const row = document.getElementById('tipRow');
     row.innerHTML = (options || [50,100,200,500]).map(amt =>
-      `<button class="tip-btn" disabled title="Coming soon — payment provider pending">💛 Tip KES ${amt} (coming soon)</button>`
+      `<button class="tip-btn" data-amt="${amt}">💛 Tip KES ${amt}</button>`
     ).join('');
+    row.querySelectorAll('.tip-btn').forEach(btn => {
+      btn.onclick = () => tipHost(Number(btn.dataset.amt));
+    });
+  }
+
+  async function tipHost(amountKes) {
+    if (!currentSession) return;
+    try {
+      const callback_url = window.location.origin + window.location.pathname;
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/paystack-init`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ purpose: 'live_tip', session_id: currentSession.id, amount_kes: amountKes, callback_url }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not start payment');
+      window.location.href = json.authorization_url;
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function handlePaystackReturn() {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference') || params.get('trxref');
+    if (!reference) return;
+    window.history.replaceState({}, '', window.location.pathname);
+    toast('Confirming your tip…', '');
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/paystack-verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ reference }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not confirm payment');
+      toast('Tip sent — thank you! 💛 Rejoin the stream to keep watching.', 'success');
+    } catch (e) {
+      toast('Payment could not be confirmed: ' + e.message, 'error');
+    }
   }
 
   async function leaveStage() {
-    localTracks.mic?.close(); localTracks.cam?.close();
-    localTracks = { mic: null, cam: null };
-    if (agoraClient) await agoraClient.leave();
+    // The DB write is the source of truth and must happen no matter what --
+    // previously this ran AFTER Agora client teardown, so any client-side
+    // hiccup (or an already-broken connection) could leave a session stuck
+    // 'live' forever with no way for the host to end it.
     if (currentSession) {
-      if (isHosting) {
-        await supabase.from('live_sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', currentSession.id);
-      } else {
-        await supabase.rpc('leave_live_session', { p_session_id: currentSession.id });
+      try {
+        if (isHosting) {
+          const { error } = await supabase.from('live_sessions')
+            .update({ status: 'ended', ended_at: new Date().toISOString() })
+            .eq('id', currentSession.id);
+          if (error) throw error;
+        } else {
+          await supabase.rpc('leave_live_session', { p_session_id: currentSession.id });
+        }
+      } catch (e) {
+        console.error('Failed to update session status', e);
+        toast('Could not confirm with the server, but leaving locally.', 'error');
       }
     }
+    // Best-effort cleanup from here -- none of this should block the above.
+    try { localTracks.mic?.close(); } catch (e) { console.error(e); }
+    try { localTracks.cam?.close(); } catch (e) { console.error(e); }
+    localTracks = { mic: null, cam: null };
+    try { if (agoraClient) await agoraClient.leave(); } catch (e) { console.error(e); }
     closeLiveChat();
     if (kickChannel) { supabase.removeChannel(kickChannel); kickChannel = null; }
     stopQuotaTracking();
+    stopHeartbeat();
+    currentSession = null;
+    isHosting = false;
     hideStage();
     loadLiveSessions();
   }
@@ -315,19 +383,28 @@
   }
 
   async function loadLiveSessions() {
+    const staleCutoff = new Date(Date.now() - 90000).toISOString();
     const { data, error } = await supabase.from('live_sessions')
-      .select('id, title, channel_name, host_id, status, started_at, tip_options, profiles!live_sessions_host_id_fkey(display_name, avatar_url)')
+      .select('id, title, channel_name, host_id, status, started_at, last_heartbeat_at, tip_options, profiles!live_sessions_host_id_fkey(display_name, avatar_url)')
       .eq('status', 'live')
       .order('started_at', { ascending: false });
     const gridEl = document.getElementById('liveGrid');
     const emptyEl = document.getElementById('emptyState');
     gridEl.innerHTML = '';
-    if (error || !data || data.length === 0) {
+    // A session with no heartbeat yet (just started) gets a grace period;
+    // one that's gone stale (host's tab likely crashed/disconnected)
+    // shouldn't show as live to other users even before the host's own
+    // client gets a chance to clean it up.
+    const live = (data || []).filter(s => {
+      if (s.last_heartbeat_at) return s.last_heartbeat_at >= staleCutoff;
+      return s.started_at >= staleCutoff;
+    });
+    if (error || live.length === 0) {
       emptyEl.style.display = 'block';
       return;
     }
     emptyEl.style.display = 'none';
-    data.forEach(s => {
+    live.forEach(s => {
       const host = s.profiles;
       const card = document.createElement('div');
       card.className = 'live-card';
@@ -464,6 +541,7 @@
       }
 
       await supabase.from('live_sessions').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', created.id);
+      await supabase.rpc('heartbeat_live_session', { p_session_id: created.id }).catch(e => console.error(e));
 
       currentSession = created;
       isHosting = true;
@@ -472,6 +550,7 @@
       document.getElementById('hostControls').style.display = 'flex';
       showStage();
       startQuotaTracking();
+      startHeartbeat();
       openLiveChat();
       refreshAudience();
       // Poll the audience panel while it's open (Realtime UPDATE/INSERT on
@@ -511,6 +590,14 @@
     me = await requireProfile(session);
     if (!me) return;
 
+    // Self-heal: if a previous session of ours (e.g. a crashed tab) was
+    // left stuck 'live' server-side, clean it up now so "Go live" isn't
+    // blocked and other users don't see a dead stream.
+    try {
+      const { data: healed } = await supabase.rpc('force_end_my_live_sessions');
+      if (healed > 0) toast('Ended a previous live session that had disconnected.', '');
+    } catch (e) { console.error(e); }
+
     if (me.subscription_tier === 'premium' || me.is_admin) {
       document.getElementById('goLiveText').textContent = 'Ready to go live? Your audience will see you instantly.';
     } else {
@@ -521,6 +608,7 @@
       }
     }
     await loadLiveSessions();
+    await handlePaystackReturn();
   })();
 </script>
 </body>

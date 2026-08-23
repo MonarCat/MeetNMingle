@@ -33,9 +33,13 @@
 <div class="page-wrap">
   <h1 class="display" style="font-size:1.6rem;">Go Premium</h1>
   <p style="color:var(--cream-dim); font-size:0.88rem; margin-top:-8px; margin-bottom:16px;">One plan, everything unlocked.</p>
-  <div class="soon-banner" id="soonBanner">
+  <div class="soon-banner" id="soonBanner" style="display:none;">
     <span class="icon">🛠️</span>
     <p><strong>Payments are coming soon.</strong> Premium isn't purchasable yet — we're finishing checkout so you can pay safely. Free features work fully in the meantime.</p>
+  </div>
+  <div class="soon-banner" id="testModeBanner">
+    <span class="icon">🧪</span>
+    <p><strong>Paystack test mode.</strong> Card payments are wired up for testing — use a Paystack test card, no real money moves. M-Pesa is still coming soon.</p>
   </div>
 
   <div class="billing-toggle">
@@ -76,7 +80,8 @@
 
   let me, session, allPlans = [];
   let billingPeriod = 'monthly';
-  const PAYMENTS_ENABLED = false; // flip to true once M-Pesa/Paystack secrets are configured
+  const MPESA_ENABLED = false; // flip to true once M-Pesa secrets are configured
+  const PAYSTACK_ENABLED = true;
 
   function render() {
     const listEl = document.getElementById('plansList');
@@ -101,13 +106,16 @@
     // Premium card
     const premCard = document.createElement('div');
     premCard.className = 'card plan-card featured' + (isPremiumCurrent ? ' current' : '');
-    let ctaHtml;
+    let ctaHtml = '';
     if (isPremiumCurrent) {
       ctaHtml = `<button class="btn btn-outline btn-block" disabled>Active${me.subscription_expires_at ? ' until ' + new Date(me.subscription_expires_at).toLocaleDateString() : ''}</button>`;
-    } else if (!PAYMENTS_ENABLED) {
-      ctaHtml = '<button class="btn btn-outline btn-block" disabled>Coming soon</button>';
     } else {
-      ctaHtml = `<button class="btn btn-primary btn-block" id="subscribeBtn">Subscribe with M-Pesa</button>`;
+      if (PAYSTACK_ENABLED) {
+        ctaHtml += `<button class="btn btn-primary btn-block" id="paystackBtn" style="margin-bottom:8px;">Pay with card (Paystack)</button>`;
+      }
+      ctaHtml += MPESA_ENABLED
+        ? `<button class="btn btn-outline btn-block" id="subscribeBtn">Subscribe with M-Pesa</button>`
+        : `<button class="btn btn-outline btn-block" disabled>M-Pesa — coming soon</button>`;
     }
     premCard.innerHTML = `
       ${isPremiumCurrent ? '<span class="current-tag">Your plan</span>' : ''}
@@ -118,12 +126,60 @@
     `;
     listEl.appendChild(premCard);
 
-    if (PAYMENTS_ENABLED && !isPremiumCurrent) {
-      document.getElementById('subscribeBtn').onclick = () => {
-        document.getElementById('payPlanName').textContent = `Subscribe — Premium (${billingPeriod})`;
-        document.getElementById('payError').textContent = '';
-        document.getElementById('payModal').classList.add('open');
-      };
+    if (!isPremiumCurrent) {
+      if (PAYSTACK_ENABLED) {
+        document.getElementById('paystackBtn').onclick = () => startPaystackCheckout(billingPeriod);
+      }
+      if (MPESA_ENABLED) {
+        document.getElementById('subscribeBtn').onclick = () => {
+          document.getElementById('payPlanName').textContent = `Subscribe — Premium (${billingPeriod})`;
+          document.getElementById('payError').textContent = '';
+          document.getElementById('payModal').classList.add('open');
+        };
+      }
+    }
+  }
+
+  async function startPaystackCheckout(period) {
+    const btn = document.getElementById('paystackBtn');
+    btn.disabled = true; btn.textContent = 'Redirecting…';
+    try {
+      const callback_url = window.location.origin + window.location.pathname;
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/paystack-init`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ purpose: 'premium', billing_period: period, callback_url }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not start payment');
+      window.location.href = json.authorization_url;
+    } catch (e) {
+      toast(e.message, 'error');
+      btn.disabled = false; btn.textContent = 'Pay with card (Paystack)';
+    }
+  }
+
+  async function handlePaystackReturn() {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference') || params.get('trxref');
+    if (!reference) return;
+    // Strip the query string so a refresh doesn't re-verify.
+    window.history.replaceState({}, '', window.location.pathname);
+    toast('Confirming your payment…', '');
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/paystack-verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({ reference }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not confirm payment');
+      const { data: freshMe } = await supabase.from('profiles').select('*').eq('id', me.id).maybeSingle();
+      if (freshMe) me = freshMe;
+      toast('You\'re Premium! 🎉', 'success');
+      render();
+    } catch (e) {
+      toast('Payment could not be confirmed: ' + e.message, 'error');
     }
   }
 
@@ -149,6 +205,7 @@
     const { data: plans } = await supabase.from('subscription_plans').select('*').order('price_kes');
     allPlans = plans || [];
     render();
+    await handlePaystackReturn();
   })();
 
   document.getElementById('payCancelBtn').onclick = () => document.getElementById('payModal').classList.remove('open');
