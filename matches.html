@@ -12,7 +12,10 @@
   .match-info { flex:1; min-width:0; }
   .match-info .name { font-weight: 700; }
   .match-info .preview { font-size: 0.82rem; color: var(--cream-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .match-row.unread .match-info .name { color: var(--coral); }
+  .match-row.unread .match-info .preview { color: var(--cream); font-weight: 600; }
   .match-time { font-size: 0.72rem; color: var(--cream-dim); }
+  .match-unread-count { min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--coral); color:#fff; font-size:0.7rem; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 </style>
 </head>
 <body>
@@ -57,22 +60,37 @@
     const { data: profiles } = await supabase.from('profiles').select('id,display_name,avatar_url').in('id', otherIds);
     const profileMap = Object.fromEntries((profiles||[]).map(p => [p.id, p]));
 
+    const convIds = matches
+      .map(m => { const c = Array.isArray(m.conversations) ? m.conversations[0] : m.conversations; return c?.id; })
+      .filter(Boolean);
+    const unreadByConv = {};
+    if (convIds.length) {
+      const { data: unreadRows } = await supabase.from('messages')
+        .select('conversation_id')
+        .neq('sender_id', me.id)
+        .is('read_at', null)
+        .in('conversation_id', convIds);
+      (unreadRows || []).forEach(r => { unreadByConv[r.conversation_id] = (unreadByConv[r.conversation_id] || 0) + 1; });
+    }
+
     listEl.innerHTML = '';
     matches.forEach(m => {
       const otherId = m.user1_id === me.id ? m.user2_id : m.user1_id;
       const p = profileMap[otherId];
       if (!p) return;
       const conv = Array.isArray(m.conversations) ? m.conversations[0] : m.conversations;
+      const unread = conv?.id ? (unreadByConv[conv.id] || 0) : 0;
       const row = document.createElement('a');
       row.href = `chat.html?match=${m.id}`;
-      row.className = 'match-row';
+      row.className = 'match-row' + (unread > 0 ? ' unread' : '');
       row.style.display = 'flex';
       row.innerHTML = `
         <div class="avatar" style="${p.avatar_url ? `background-image:url('${p.avatar_url}')` : ''}"></div>
         <div class="match-info">
           <div class="name">${p.display_name}</div>
-          <div class="preview">${conv?.last_message_at ? 'Tap to continue chatting' : 'Say hi 👋'}</div>
+          <div class="preview">${conv?.last_message_at ? (unread > 0 ? `${unread} new message${unread > 1 ? 's' : ''}` : 'Tap to continue chatting') : 'Say hi 👋'}</div>
         </div>
+        ${unread > 0 ? `<div class="match-unread-count">${unread > 99 ? '99+' : unread}</div>` : ''}
         <div class="match-time">${timeAgo(conv?.last_message_at || m.matched_at)}</div>
       `;
       listEl.appendChild(row);

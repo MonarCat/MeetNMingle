@@ -263,11 +263,15 @@
     if (!conversationId) { toast('Conversation not ready yet, please retry.', 'error'); return; }
 
     await loadThread();
+    await supabase.rpc('mark_conversation_read', { p_conversation_id: conversationId });
 
     supabase
       .channel(`conv-${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
-        async () => { await loadThread(); })
+        async () => {
+          await loadThread();
+          await supabase.rpc('mark_conversation_read', { p_conversation_id: conversationId });
+        })
       .subscribe();
   })();
 </script>

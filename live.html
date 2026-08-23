@@ -251,12 +251,38 @@
       await client.setClientRole('host');
       await client.join(appId, created.channel_name, token, uid);
 
-      localTracks.mic = await AgoraRTC.createMicrophoneAudioTrack();
-      localTracks.cam = await AgoraRTC.createCameraVideoTrack();
-      localTracks.cam.play('localVideo');
-      document.getElementById('localVideo').style.display = 'block';
+      // Mic and camera are requested independently so a missing/blocked
+      // device (common on desktops with no webcam or mic) doesn't kill the
+      // whole "go live" flow -- the host just goes live with whichever
+      // device is actually available.
+      const deviceWarnings = [];
+      try {
+        localTracks.mic = await AgoraRTC.createMicrophoneAudioTrack();
+      } catch (e) {
+        console.error('mic track failed', e);
+        deviceWarnings.push(e?.code === 'DEVICE_NOT_FOUND' ? 'no microphone found' : 'microphone unavailable');
+      }
+      try {
+        localTracks.cam = await AgoraRTC.createCameraVideoTrack();
+      } catch (e) {
+        console.error('camera track failed', e);
+        deviceWarnings.push(e?.code === 'DEVICE_NOT_FOUND' ? 'no camera found' : 'camera unavailable');
+      }
+      if (!localTracks.mic && !localTracks.cam) {
+        throw new Error('No camera or microphone available on this device.');
+      }
+      if (localTracks.cam) {
+        localTracks.cam.play('localVideo');
+        document.getElementById('localVideo').style.display = 'block';
+      } else {
+        document.getElementById('localVideo').style.display = 'none';
+      }
       document.getElementById('remoteVideo').style.display = 'none';
-      await client.publish([localTracks.mic, localTracks.cam]);
+      const tracksToPublish = [localTracks.mic, localTracks.cam].filter(Boolean);
+      await client.publish(tracksToPublish);
+      if (deviceWarnings.length) {
+        toast('Live with ' + (localTracks.mic ? '' : 'no mic, ') + (localTracks.cam ? '' : 'no camera, ') + 'check your device settings to add it.', 'error');
+      }
 
       await supabase.from('live_sessions').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', created.id);
 
